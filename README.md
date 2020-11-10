@@ -1,3 +1,5 @@
-# CnSinger's Blog
+# CnSinger
 
-[Blog](https://cnsinger.github.io/blog)
+Welcome to CnSinger Page.
+
+[CnSinger‘s Blog](https://cnsinger.github.io/blog)

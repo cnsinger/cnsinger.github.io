@@ -1,9 +1,554 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>MySQL高性能优化规范建议</title>
+    <url>/blog/2020/11/22/MySQL%E9%AB%98%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E8%A7%84%E8%8C%83%E5%BB%BA%E8%AE%AE/</url>
+    <content><![CDATA[<p>[Toc]</p>
+<blockquote>
+<p>以下为网络学习的知识，时间太久出处不可考证，但作为本人知识的一部分保留在此，已备复习。</p>
+</blockquote>
+<h2 id="数据库命令规范"><a href="#数据库命令规范" class="headerlink" title="数据库命令规范"></a><strong>数据库命令规范</strong></h2><ul>
+<li>所有数据库对象名称必须使用小写字母并用下划线分割</li>
+<li>所有数据库对象名称禁止使用 MySQL 保留关键字（如果表名中包含关键字查询时，需要将其用单引号括起来）</li>
+<li>数据库对象的命名要能做到见名识意，并且最后不要超过 32 个字符</li>
+<li>临时库表必须以 tmp<em>为前缀并以日期为后缀，备份表必须以 bak</em>为前缀并以日期 (时间戳) 为后缀</li>
+<li>所有存储相同数据的列名和列类型必须一致（一般作为关联列，如果查询时关联列类型不一致会自动进行数据类型隐式转换，会造成列上的索引失效，导致查询效率降低）</li>
+</ul>
+<hr>
+<h2 id="数据库基本设计规范"><a href="#数据库基本设计规范" class="headerlink" title="数据库基本设计规范"></a><strong>数据库基本设计规范</strong></h2><h3 id="1-所有表必须使用-Innodb-存储引擎"><a href="#1-所有表必须使用-Innodb-存储引擎" class="headerlink" title="1. 所有表必须使用 Innodb 存储引擎"></a><strong>1. 所有表必须使用 Innodb 存储引擎</strong></h3><p>没有特殊要求（即 Innodb 无法满足的功能如：列存储，存储空间数据等）的情况下，所有表必须使用 Innodb 存储引擎（MySQL5.5 之前默认使用 Myisam，5.6 以后默认的为 Innodb）。</p>
+<p>Innodb 支持事务，支持行级锁，更好的恢复性，高并发下性能更好。</p>
+<h3 id="2-数据库和表的字符集统一使用-UTF8"><a href="#2-数据库和表的字符集统一使用-UTF8" class="headerlink" title="2. 数据库和表的字符集统一使用 UTF8"></a><strong>2. 数据库和表的字符集统一使用 UTF8</strong></h3><p>兼容性更好，统一字符集可以避免由于字符集转换产生的乱码，不同的字符集进行比较前需要进行转换会造成索引失效，如果数据库中有存储 emoji 表情的需要，字符集需要采用 utf8mb4 字符集。</p>
+<p>参考文章：<a href="https://link.zhihu.com/?target=https%3A//blog.csdn.net/horses/article/details/107243447">MySQL 字符集不一致导致索引失效的一个真实案例</a></p>
+<h3 id="3-所有表和字段都需要添加注释"><a href="#3-所有表和字段都需要添加注释" class="headerlink" title="3. 所有表和字段都需要添加注释"></a><strong>3. 所有表和字段都需要添加注释</strong></h3><p>使用 comment 从句添加表和列的备注，从一开始就进行数据字典的维护</p>
+<h3 id="4-尽量控制单表数据量的大小-建议控制在-500-万以内。"><a href="#4-尽量控制单表数据量的大小-建议控制在-500-万以内。" class="headerlink" title="4. 尽量控制单表数据量的大小,建议控制在 500 万以内。"></a><strong>4. 尽量控制单表数据量的大小,建议控制在 500 万以内。</strong></h3><p>500 万并不是 MySQL 数据库的限制，过大会造成修改表结构，备份，恢复都会有很大的问题。</p>
+<p>可以用历史数据归档（应用于日志数据），分库分表（应用于业务数据）等手段来控制数据量大小</p>
+<h3 id="5-谨慎使用-MySQL-分区表"><a href="#5-谨慎使用-MySQL-分区表" class="headerlink" title="5. 谨慎使用 MySQL 分区表"></a><strong>5. 谨慎使用 MySQL 分区表</strong></h3><p>分区表在物理上表现为多个文件，在逻辑上表现为一个表；</p>
+<p>谨慎选择分区键，跨分区查询效率可能更低；</p>
+<p>建议采用物理分表的方式管理大数据。</p>
+<h3 id="6-尽量做到冷热数据分离-减小表的宽度"><a href="#6-尽量做到冷热数据分离-减小表的宽度" class="headerlink" title="6.尽量做到冷热数据分离,减小表的宽度"></a><strong>6.尽量做到冷热数据分离,减小表的宽度</strong></h3><blockquote>
+<p>MySQL 限制每个表最多存储 4096 列，并且每一行数据的大小不能超过 65535 字节。</p>
+</blockquote>
+<p>减少磁盘 IO,保证热数据的内存缓存命中率（表越宽，把表装载进内存缓冲池时所占用的内存也就越大,也会消耗更多的 IO）；</p>
+<p>更有效的利用缓存，避免读入无用的冷数据；</p>
+<p>经常一起使用的列放到一个表中（避免更多的关联操作）。</p>
+<h3 id="7-禁止在表中建立预留字段"><a href="#7-禁止在表中建立预留字段" class="headerlink" title="7. 禁止在表中建立预留字段"></a><strong>7. 禁止在表中建立预留字段</strong></h3><p>预留字段的命名很难做到见名识义。</p>
+<p>预留字段无法确认存储的数据类型，所以无法选择合适的类型。</p>
+<p>对预留字段类型的修改，会对表进行锁定。</p>
+<h3 id="8-禁止在数据库中存储图片-文件等大的二进制数据"><a href="#8-禁止在数据库中存储图片-文件等大的二进制数据" class="headerlink" title="8. 禁止在数据库中存储图片,文件等大的二进制数据"></a><strong>8. 禁止在数据库中存储图片,文件等大的二进制数据</strong></h3><p>通常文件很大，会短时间内造成数据量快速增长，数据库进行数据库读取时，通常会进行大量的随机 IO 操作，文件很大时，IO 操作很耗时。</p>
+<p>通常存储于文件服务器，数据库只存储文件地址信息</p>
+<h3 id="9-禁止在线上做数据库压力测试"><a href="#9-禁止在线上做数据库压力测试" class="headerlink" title="9. 禁止在线上做数据库压力测试"></a><strong>9. 禁止在线上做数据库压力测试</strong></h3><h3 id="10-禁止从开发环境-测试环境直接连接生产环境数据库"><a href="#10-禁止从开发环境-测试环境直接连接生产环境数据库" class="headerlink" title="10. 禁止从开发环境,测试环境直接连接生产环境数据库"></a><strong>10. 禁止从开发环境,测试环境直接连接生产环境数据库</strong></h3><hr>
+<h2 id="数据库字段设计规范"><a href="#数据库字段设计规范" class="headerlink" title="数据库字段设计规范"></a><strong>数据库字段设计规范</strong></h2><h3 id="1-优先选择符合存储需要的最小的数据类型"><a href="#1-优先选择符合存储需要的最小的数据类型" class="headerlink" title="1. 优先选择符合存储需要的最小的数据类型"></a><strong>1. 优先选择符合存储需要的最小的数据类型</strong></h3><p><strong>原因：</strong></p>
+<p>列的字段越大，建立索引时所需要的空间也就越大，这样一页中所能存储的索引节点的数量也就越少也越少，在遍历时所需要的 IO 次数也就越多，索引的性能也就越差。</p>
+<p><strong>方法：</strong></p>
+<p><strong>a.将字符串转换成数字类型存储,如:将 IP 地址转换成整形数据</strong></p>
+<p>MySQL 提供了两个方法来处理 ip 地址</p>
+<ul>
+<li>inet_aton 把 ip 转为无符号整型 (4-8 位)</li>
+<li>inet_ntoa 把整型的 ip 转为地址</li>
+</ul>
+<p>插入数据前，先用 inet_aton 把 ip 地址转为整型，可以节省空间，显示数据时，使用 inet_ntoa 把整型的 ip 地址转为地址显示即可。</p>
+<p><strong>b.对于非负型的数据 (如自增 ID,整型 IP) 来说,要优先使用无符号整型来存储</strong></p>
+<p><strong>原因：</strong></p>
+<p>无符号相对于有符号可以多出一倍的存储空间</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">SIGNED INT -2147483648~2147483647</span><br><span class="line">UNSIGNED INT 0~4294967295</span><br></pre></td></tr></table></figure>
+
+<p>VARCHAR(N) 中的 N 代表的是字符数，而不是字节数，使用 UTF8 存储 255 个汉字 Varchar(255)=765 个字节。<strong>过大的长度会消耗更多的内存。</strong></p>
+<h3 id="2-避免使用-TEXT-BLOB-数据类型，最常见的-TEXT-类型可以存储-64k-的数据"><a href="#2-避免使用-TEXT-BLOB-数据类型，最常见的-TEXT-类型可以存储-64k-的数据" class="headerlink" title="2. 避免使用 TEXT,BLOB 数据类型，最常见的 TEXT 类型可以存储 64k 的数据"></a><strong>2. 避免使用 TEXT,BLOB 数据类型，最常见的 TEXT 类型可以存储 64k 的数据</strong></h3><p><strong>a. 建议把 BLOB 或是 TEXT 列分离到单独的扩展表中</strong></p>
+<p>MySQL 内存临时表不支持 TEXT、BLOB 这样的大数据类型，如果查询中包含这样的数据，在排序等操作时，就不能使用内存临时表，必须使用磁盘临时表进行。而且对于这种数据，MySQL 还是要进行二次查询，会使 sql 性能变得很差，但是不是说一定不能使用这样的数据类型。</p>
+<p>如果一定要使用，建议把 BLOB 或是 TEXT 列分离到单独的扩展表中，查询时一定不要使用 select * 而只需要取出必要的列，不需要 TEXT 列的数据时不要对该列进行查询。</p>
+<p><strong>2、TEXT 或 BLOB 类型只能使用前缀索引</strong></p>
+<p>因为<a href="https://link.zhihu.com/?target=http%3A//mp.weixin.qq.com/s%3F__biz%3DMzI4Njc5NjM1NQ%3D%3D%26mid%3D2247487885%26idx%3D1%26sn%3D65b1bf5f7d4505502620179669a9c2df%26chksm%3Debd62ea1dca1a7b7bf884bcd9d538d78ba064ee03c09436ca8e57873b1d98a55afd6d7884cfc%26scene%3D21%23wechat_redirect">MySQL</a> 对索引字段长度是有限制的，所以 TEXT 类型只能使用前缀索引，并且 TEXT 列上是不能有默认值的</p>
+<h3 id="3-避免使用-ENUM-类型"><a href="#3-避免使用-ENUM-类型" class="headerlink" title="3. 避免使用 ENUM 类型"></a><strong>3. 避免使用 ENUM 类型</strong></h3><p>修改 ENUM 值需要使用 ALTER 语句</p>
+<p>ENUM 类型的 ORDER BY 操作效率低，需要额外操作</p>
+<p>禁止使用数值作为 ENUM 的枚举值</p>
+<h3 id="4-尽可能把所有列定义为-NOT-NULL"><a href="#4-尽可能把所有列定义为-NOT-NULL" class="headerlink" title="4. 尽可能把所有列定义为 NOT NULL"></a><strong>4. 尽可能把所有列定义为 NOT NULL</strong></h3><p><strong>原因：</strong></p>
+<p>索引 NULL 列需要额外的空间来保存，所以要占用更多的空间</p>
+<p>进行比较和计算时要对 NULL 值做特别的处理</p>
+<h3 id="5-使用-TIMESTAMP-4-个字节-或-DATETIME-类型-8-个字节-存储时间"><a href="#5-使用-TIMESTAMP-4-个字节-或-DATETIME-类型-8-个字节-存储时间" class="headerlink" title="5. 使用 TIMESTAMP(4 个字节) 或 DATETIME 类型 (8 个字节) 存储时间"></a><strong>5. 使用 TIMESTAMP(4 个字节) 或 DATETIME 类型 (8 个字节) 存储时间</strong></h3><p>TIMESTAMP 存储的时间范围 1970-01-01 00:00:01 ~ 2038-01-19-03:14:07</p>
+<p>TIMESTAMP 占用 4 字节和 INT 相同，但比 INT 可读性高</p>
+<p>超出 TIMESTAMP 取值范围的使用 DATETIME 类型存储</p>
+<p><strong>经常会有人用字符串存储日期型的数据（不正确的做法）</strong></p>
+<ul>
+<li>缺点 1：无法用日期函数进行计算和比较</li>
+<li>缺点 2：用字符串存储日期要占用更多的空间</li>
+</ul>
+<h3 id="6-同财务相关的金额类数据必须使用-decimal-类型"><a href="#6-同财务相关的金额类数据必须使用-decimal-类型" class="headerlink" title="6. 同财务相关的金额类数据必须使用 decimal 类型"></a><strong>6. 同财务相关的金额类数据必须使用 decimal 类型</strong></h3><ul>
+<li>非精准浮点：float,double</li>
+<li>精准浮点：decimal</li>
+</ul>
+<p>Decimal 类型为精准浮点数，在计算时不会丢失精度</p>
+<p>占用空间由定义的宽度决定，每 4 个字节可以存储 9 位数字，并且小数点要占用一个字节</p>
+<p>可用于存储比 bigint 更大的整型数据</p>
+<hr>
+<h2 id="索引设计规范"><a href="#索引设计规范" class="headerlink" title="索引设计规范"></a><strong>索引设计规范</strong></h2><h3 id="1-限制每张表上的索引数量-建议单张表索引不超过-5-个"><a href="#1-限制每张表上的索引数量-建议单张表索引不超过-5-个" class="headerlink" title="1. 限制每张表上的索引数量,建议单张表索引不超过 5 个"></a><strong>1. 限制每张表上的索引数量,建议单张表索引不超过 5 个</strong></h3><p>索引并不是越多越好！索引可以提高效率同样可以降低效率。</p>
+<p>索引可以增加查询效率，但同样也会降低插入和更新的效率，甚至有些情况下会降低查询效率。</p>
+<p>因为 MySQL 优化器在选择如何优化查询时，会根据统一信息，对每一个可以用到的索引来进行评估，以生成出一个最好的执行计划，如果同时有很多个索引都可以用于查询，就会增加 MySQL 优化器生成执行计划的时间，同样会降低查询性能。</p>
+<h3 id="2-禁止给表中的每一列都建立单独的索引"><a href="#2-禁止给表中的每一列都建立单独的索引" class="headerlink" title="2. 禁止给表中的每一列都建立单独的索引"></a><strong>2. 禁止给表中的每一列都建立单独的索引</strong></h3><p>5.6 版本之前，一个 sql 只能使用到一个表中的一个索引，5.6 以后，虽然有了合并索引的优化方式，但是还是远远没有使用一个联合索引的查询方式好。</p>
+<h3 id="3-每个-Innodb-表必须有个主键"><a href="#3-每个-Innodb-表必须有个主键" class="headerlink" title="3. 每个 Innodb 表必须有个主键"></a><strong>3. 每个 Innodb 表必须有个主键</strong></h3><p>Innodb 是一种索引组织表：数据的存储的逻辑顺序和索引的顺序是相同的。每个表都可以有多个索引，但是表的存储顺序只能有一种。</p>
+<p>Innodb 是按照主键索引的顺序来组织表的</p>
+<ul>
+<li>不要使用更新频繁的列作为主键，不适用多列主键（相当于联合索引）</li>
+<li>不要使用 UUID,MD5,HASH,字符串列作为主键（无法保证数据的顺序增长）</li>
+<li>主键建议使用自增 ID 值</li>
+</ul>
+<hr>
+<h3 id="4-常见索引列建议"><a href="#4-常见索引列建议" class="headerlink" title="4. 常见索引列建议"></a><strong>4. 常见索引列建议</strong></h3><ul>
+<li>出现在 SELECT、UPDATE、DELETE 语句的 WHERE 从句中的列</li>
+<li>包含在 ORDER BY、GROUP BY、DISTINCT 中的字段</li>
+<li>并不要将符合 1 和 2 中的字段的列都建立一个索引， 通常将 1、2 中的字段建立联合索引效果更好</li>
+<li>多表 join 的关联列</li>
+</ul>
+<hr>
+<h3 id="5-如何选择索引列的顺序"><a href="#5-如何选择索引列的顺序" class="headerlink" title="5.如何选择索引列的顺序"></a><strong>5.如何选择索引列的顺序</strong></h3><p>建立索引的目的是：希望通过索引进行数据查找，减少随机 IO，增加查询性能 ，索引能过滤出越少的数据，则从磁盘中读入的数据也就越少。</p>
+<ul>
+<li>区分度最高的放在联合索引的最左侧（区分度=列中不同值的数量/列的总行数）</li>
+<li>尽量把字段长度小的列放在联合索引的最左侧（因为字段长度越小，一页能存储的数据量越大，IO 性能也就越好）</li>
+<li>使用最频繁的列放到联合索引的左侧（这样可以比较少的建立一些索引）</li>
+</ul>
+<hr>
+<h3 id="6-避免建立冗余索引和重复索引（增加了查询优化器生成执行计划的时间）"><a href="#6-避免建立冗余索引和重复索引（增加了查询优化器生成执行计划的时间）" class="headerlink" title="6. 避免建立冗余索引和重复索引（增加了查询优化器生成执行计划的时间）"></a><strong>6. 避免建立冗余索引和重复索引（增加了查询优化器生成执行计划的时间）</strong></h3><ul>
+<li>重复索引示例：primary key(id)、index(id)、unique index(id)</li>
+<li>冗余索引示例：index(a,b,c)、index(a,b)、index(a)</li>
+</ul>
+<hr>
+<h3 id="7-对于频繁的查询优先考虑使用覆盖索引"><a href="#7-对于频繁的查询优先考虑使用覆盖索引" class="headerlink" title="7. 对于频繁的查询优先考虑使用覆盖索引"></a><strong>7. 对于频繁的查询优先考虑使用覆盖索引</strong></h3><blockquote>
+<p>覆盖索引：就是包含了所有查询字段 (where,select,ordery by,group by 包含的字段) 的索引</p>
+</blockquote>
+<p><strong>覆盖索引的好处：</strong></p>
+<ul>
+<li><strong>避免 Innodb 表进行索引的二次查询:</strong> Innodb 是以聚集索引的顺序来存储的，对于 Innodb 来说，二级索引在叶子节点中所保存的是行的主键信息，如果是用二级索引查询数据的话，在查找到相应的键值后，还要通过主键进行二次查询才能获取我们真实所需要的数据。而在覆盖索引中，二级索引的键值中可以获取所有的数据，避免了对主键的二次查询 ，减少了 IO 操作，提升了查询效率。</li>
+<li><strong>可以把随机 IO 变成顺序 IO 加快查询效率:</strong> 由于覆盖索引是按键值的顺序存储的，对于 IO 密集型的范围查找来说，对比随机从磁盘读取每一行的数据 IO 要少的多，因此利用覆盖索引在访问时也可以把磁盘的随机读取的 IO 转变成索引查找的顺序 IO。</li>
+</ul>
+<hr>
+<h3 id="8-索引-SET-规范"><a href="#8-索引-SET-规范" class="headerlink" title="8.索引 SET 规范"></a><strong>8.索引 SET 规范</strong></h3><p><strong>尽量避免使用外键约束</strong></p>
+<ul>
+<li>不建议使用外键约束（foreign key），但一定要在表与表之间的关联键上建立索引</li>
+<li>外键可用于保证数据的参照完整性，但建议在业务端实现</li>
+<li>外键会影响父表和子表的写操作从而降低性能</li>
+</ul>
+<hr>
+<h2 id="数据库-SQL-开发规范"><a href="#数据库-SQL-开发规范" class="headerlink" title="数据库 SQL 开发规范"></a><strong>数据库 SQL 开发规范</strong></h2><h3 id="1-建议使用预编译语句进行数据库操作"><a href="#1-建议使用预编译语句进行数据库操作" class="headerlink" title="1. 建议使用预编译语句进行数据库操作"></a><strong>1. 建议使用预编译语句进行数据库操作</strong></h3><p>预编译语句可以重复使用这些计划，减少 SQL 编译所需要的时间，还可以解决动态 SQL 所带来的 SQL 注入的问题。</p>
+<p>只传参数，比传递 SQL 语句更高效。</p>
+<p>相同语句可以一次解析，多次使用，提高处理效率。</p>
+<h3 id="2-避免数据类型的隐式转换"><a href="#2-避免数据类型的隐式转换" class="headerlink" title="2. 避免数据类型的隐式转换"></a><strong>2. 避免数据类型的隐式转换</strong></h3><p>隐式转换会导致索引失效如:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">select name,phone from customer where id &#x3D; &#39;111&#39;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-充分利用表上已经存在的索引"><a href="#3-充分利用表上已经存在的索引" class="headerlink" title="3. 充分利用表上已经存在的索引"></a><strong>3. 充分利用表上已经存在的索引</strong></h3><p>避免使用双%号的查询条件。如：<code>a like &#39;%123%&#39;</code>，（如果无前置%,只有后置%，是可以用到列上的索引的）</p>
+<p>一个 SQL 只能利用到复合索引中的一列进行范围查询。如：有 a,b,c 列的联合索引，在查询条件中有 a 列的范围查询，则在 b,c 列上的索引将不会被用到。</p>
+<p>在定义联合索引时，如果 a 列要用到范围查找的话，就要把 a 列放到联合索引的右侧，使用 left join 或 not exists 来优化 not in 操作，因为 not in 也通常会使用索引失效。</p>
+<h3 id="4-数据库设计时，应该要对以后扩展进行考虑"><a href="#4-数据库设计时，应该要对以后扩展进行考虑" class="headerlink" title="4. 数据库设计时，应该要对以后扩展进行考虑"></a><strong>4. 数据库设计时，应该要对以后扩展进行考虑</strong></h3><h3 id="5-程序连接不同的数据库使用不同的账号，禁止跨库查询"><a href="#5-程序连接不同的数据库使用不同的账号，禁止跨库查询" class="headerlink" title="5. 程序连接不同的数据库使用不同的账号，禁止跨库查询"></a><strong>5. 程序连接不同的数据库使用不同的账号，禁止跨库查询</strong></h3><ul>
+<li>为数据库迁移和分库分表留出余地</li>
+<li>降低业务耦合度</li>
+<li>避免权限过大而产生的安全风险</li>
+</ul>
+<h3 id="6-禁止使用-SELECT-必须使用-SELECT-lt-字段列表-gt-查询"><a href="#6-禁止使用-SELECT-必须使用-SELECT-lt-字段列表-gt-查询" class="headerlink" title="6. 禁止使用 SELECT * 必须使用 SELECT &lt;字段列表&gt; 查询"></a><strong>6. 禁止使用 SELECT * 必须使用 SELECT &lt;字段列表&gt; 查询</strong></h3><p><strong>原因：</strong></p>
+<ul>
+<li>消耗更多的 CPU 和 IO 以网络带宽资源</li>
+<li>无法使用覆盖索引</li>
+<li>可减少表结构变更带来的影响</li>
+</ul>
+<h3 id="7-禁止使用不含字段列表的-INSERT-语句"><a href="#7-禁止使用不含字段列表的-INSERT-语句" class="headerlink" title="7. 禁止使用不含字段列表的 INSERT 语句"></a><strong>7. 禁止使用不含字段列表的 INSERT 语句</strong></h3><p>如：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">insert into values (&#39;a&#39;,&#39;b&#39;,&#39;c&#39;);</span><br></pre></td></tr></table></figure>
+
+<p>应使用：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">insert into t(c1,c2,c3) values (&#39;a&#39;,&#39;b&#39;,&#39;c&#39;);</span><br></pre></td></tr></table></figure>
+
+<h3 id="8-避免使用子查询，可以把子查询优化为-join-操作"><a href="#8-避免使用子查询，可以把子查询优化为-join-操作" class="headerlink" title="8. 避免使用子查询，可以把子查询优化为 join 操作"></a><strong>8. 避免使用子查询，可以把子查询优化为 join 操作</strong></h3><p>通常子查询在 in 子句中，且子查询中为简单 SQL(不包含 union、group by、order by、limit 从句) 时,才可以把子查询转化为关联查询进行优化。</p>
+<p><strong>子查询性能差的原因：</strong></p>
+<p>子查询的结果集无法使用索引，通常子查询的结果集会被存储到临时表中，不论是内存临时表还是磁盘临时表都不会存在索引，所以查询性能会受到一定的影响。特别是对于返回结果集比较大的子查询，其对查询性能的影响也就越大。</p>
+<p>由于子查询会产生大量的临时表也没有索引，所以会消耗过多的 CPU 和 IO 资源，产生大量的慢查询。</p>
+<h3 id="9-避免使用-JOIN-关联太多的表"><a href="#9-避免使用-JOIN-关联太多的表" class="headerlink" title="9. 避免使用 JOIN 关联太多的表"></a><strong>9. 避免使用 JOIN 关联太多的表</strong></h3><p>对于 MySQL 来说，是存在关联缓存的，缓存的大小可以由 join_buffer_size 参数进行设置。</p>
+<p>在 MySQL 中，对于同一个 SQL 多关联（join）一个表，就会多分配一个关联缓存，如果在一个 SQL 中关联的表越多，所占用的内存也就越大。</p>
+<p>如果程序中大量的使用了多表关联的操作，同时 join_buffer_size 设置的也不合理的情况下，就容易造成服务器内存溢出的情况，就会影响到服务器数据库性能的稳定性。</p>
+<p>同时对于关联操作来说，会产生临时表操作，影响查询效率，MySQL 最多允许关联 61 个表，建议不超过 5 个。</p>
+<h3 id="10-减少同数据库的交互次数"><a href="#10-减少同数据库的交互次数" class="headerlink" title="10. 减少同数据库的交互次数"></a><strong>10. 减少同数据库的交互次数</strong></h3><p>数据库更适合处理批量操作，合并多个相同的操作到一起，可以提高处理效率。</p>
+<h3 id="11-对应同一列进行-or-判断时，使用-in-代替-or"><a href="#11-对应同一列进行-or-判断时，使用-in-代替-or" class="headerlink" title="11. 对应同一列进行 or 判断时，使用 in 代替 or"></a><strong>11. 对应同一列进行 or 判断时，使用 in 代替 or</strong></h3><p>in 的值不要超过 500 个，in 操作可以更有效的利用索引，or 大多数情况下很少能利用到索引。</p>
+<h3 id="12-禁止使用-order-by-rand-进行随机排序"><a href="#12-禁止使用-order-by-rand-进行随机排序" class="headerlink" title="12. 禁止使用 order by rand() 进行随机排序"></a><strong>12. 禁止使用 order by rand() 进行随机排序</strong></h3><p>order by rand() 会把表中所有符合条件的数据装载到内存中，然后在内存中对所有数据根据随机生成的值进行排序，并且可能会对每一行都生成一个随机值，如果满足条件的数据集非常大，就会消耗大量的 CPU 和 IO 及内存资源。</p>
+<p>推荐在程序中获取一个随机值，然后从数据库中获取数据的方式。</p>
+<h3 id="13-WHERE-从句中禁止对列进行函数转换和计算"><a href="#13-WHERE-从句中禁止对列进行函数转换和计算" class="headerlink" title="13. WHERE 从句中禁止对列进行函数转换和计算"></a><strong>13. WHERE 从句中禁止对列进行函数转换和计算</strong></h3><p>对列进行函数转换或计算时会导致无法使用索引</p>
+<p><strong>不推荐：</strong></p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">where date(create_time)&#x3D;&#39;20190101&#39;</span><br></pre></td></tr></table></figure>
+
+<p><strong>推荐：</strong></p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">where create_time &gt;&#x3D; &#39;20190101&#39; and create_time &lt; &#39;20190102&#39;</span><br></pre></td></tr></table></figure>
+
+<h3 id="14-在明显不会有重复值时使用-UNION-ALL-而不是-UNION"><a href="#14-在明显不会有重复值时使用-UNION-ALL-而不是-UNION" class="headerlink" title="14. 在明显不会有重复值时使用 UNION ALL 而不是 UNION"></a><strong>14. 在明显不会有重复值时使用 UNION ALL 而不是 UNION</strong></h3><ul>
+<li>UNION 会把两个结果集的所有数据放到临时表中后再进行去重操作</li>
+<li>UNION ALL 不会再对结果集进行去重操作</li>
+</ul>
+<h3 id="15-拆分复杂的大-SQL-为多个小-SQL"><a href="#15-拆分复杂的大-SQL-为多个小-SQL" class="headerlink" title="15. 拆分复杂的大 SQL 为多个小 SQL"></a><strong>15. 拆分复杂的大 SQL 为多个小 SQL</strong></h3><ul>
+<li>大 SQL 逻辑上比较复杂，需要占用大量 CPU 进行计算的 SQL</li>
+<li>MySQL 中，一个 SQL 只能使用一个 CPU 进行计算</li>
+<li>SQL 拆分后可以通过并行执行来提高处理效率</li>
+</ul>
+<hr>
+<h2 id="数据库操作行为规范"><a href="#数据库操作行为规范" class="headerlink" title="数据库操作行为规范"></a><strong>数据库操作行为规范</strong></h2><h3 id="1-超-100-万行的批量写-UPDATE-DELETE-INSERT-操作-要分批多次进行操作"><a href="#1-超-100-万行的批量写-UPDATE-DELETE-INSERT-操作-要分批多次进行操作" class="headerlink" title="1. 超 100 万行的批量写 (UPDATE,DELETE,INSERT) 操作,要分批多次进行操作"></a><strong>1. 超 100 万行的批量写 (UPDATE,DELETE,INSERT) 操作,要分批多次进行操作</strong></h3><p><strong>大批量操作可能会造成严重的主从延迟</strong></p>
+<p>主从环境中,大批量操作可能会造成严重的主从延迟，大批量的写操作一般都需要执行一定长的时间， 而只有当主库上执行完成后，才会在其他从库上执行，所以会造成主库与从库长时间的延迟情况</p>
+<p><strong>binlog 日志为 row 格式时会产生大量的日志</strong></p>
+<p>大批量写操作会产生大量日志，特别是对于 row 格式二进制数据而言，由于在 row 格式中会记录每一行数据的修改，我们一次修改的数据越多，产生的日志量也就会越多，日志的传输和恢复所需要的时间也就越长，这也是造成主从延迟的一个原因</p>
+<p><strong>避免产生大事务操作</strong></p>
+<p>大批量修改数据，一定是在一个事务中进行的，这就会造成表中大批量数据进行锁定，从而导致大量的阻塞，阻塞会对 MySQL 的性能产生非常大的影响。</p>
+<p>特别是长时间的阻塞会占满所有数据库的可用连接，这会使生产环境中的其他应用无法连接到数据库，因此一定要注意大批量写操作要进行分批</p>
+<h3 id="2-对于大表使用-pt-online-schema-change-修改表结构"><a href="#2-对于大表使用-pt-online-schema-change-修改表结构" class="headerlink" title="2. 对于大表使用 pt-online-schema-change 修改表结构"></a><strong>2. 对于大表使用 pt-online-schema-change 修改表结构</strong></h3><ul>
+<li>避免大表修改产生的主从延迟</li>
+<li>避免在对表字段进行修改时进行锁表</li>
+</ul>
+<p>对大表数据结构的修改一定要谨慎，会造成严重的锁表操作，尤其是生产环境，是不能容忍的。</p>
+<p>pt-online-schema-change 它会首先建立一个与原表结构相同的新表，并且在新表上进行表结构的修改，然后再把原表中的数据复制到新表中，并在原表中增加一些触发器。把原表中新增的数据也复制到新表中，在行所有数据复制完成之后，把新表命名成原表，并把原来的表删除掉。把原来一个 DDL 操作，分解成多个小的批次进行。</p>
+<h3 id="3-禁止为程序使用的账号赋予-super-权限"><a href="#3-禁止为程序使用的账号赋予-super-权限" class="headerlink" title="3. 禁止为程序使用的账号赋予 super 权限"></a><strong>3. 禁止为程序使用的账号赋予 super 权限</strong></h3><ul>
+<li>当达到最大连接数限制时，还运行 1 个有 super 权限的用户连接</li>
+<li>super 权限只能留给 DBA 处理问题的账号使用</li>
+</ul>
+<h3 id="4-对于程序连接数据库账号-遵循权限最小原则"><a href="#4-对于程序连接数据库账号-遵循权限最小原则" class="headerlink" title="4. 对于程序连接数据库账号,遵循权限最小原则"></a><strong>4. 对于程序连接数据库账号,遵循权限最小原则</strong></h3><ul>
+<li>程序使用数据库账号只能在一个 DB 下使用，不准跨库</li>
+<li>程序使用的账号原则上不准有 drop 权限</li>
+</ul>
+]]></content>
+      <categories>
+        <category>MySql</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>大量数据表的优化方案</title>
+    <url>/blog/2020/11/22/%E5%A4%A7%E9%87%8F%E6%95%B0%E6%8D%AE%E8%A1%A8%E7%9A%84%E4%BC%98%E5%8C%96%E6%96%B9%E6%A1%88/</url>
+    <content><![CDATA[<blockquote>
+<p>以下为网络学习的知识，时间太久出处不可考证，但作为本人知识的一部分保留在此，已备复习。</p>
+</blockquote>
+<p>1、对查询进行优化，要尽量避免全表扫描，首先应考虑在 where 及 order by 涉及的列上建立索引。<br>2、应尽量避免在 where 子句中对字段进行 null 值判断，否则将导致引擎放弃使用索引而进行全表扫描，如：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num is null</span><br></pre></td></tr></table></figure>
+
+<p>最好不要给数据库留NULL，尽可能的使用 NOT NULL填充数据库。<br>备注、描述、评论之类的可以设置为 NULL，其他的，最好不要使用NULL。<br>不要以为 NULL 不需要空间，比如：char(100) 型，在字段建立时，空间就固定了， 不管是否插入值（NULL也包含在内），都是占用 100个字符的空间的，如果是varchar这样的变长字段， null 不占用空间。<br>可以在num上设置默认值0，确保表中num列没有null值，然后这样查询：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num=<span class="number">0</span></span><br></pre></td></tr></table></figure>
+
+<p>3、应尽量避免在 where 子句中使用 != 或 &lt;&gt; 操作符，否则将引擎放弃使用索引而进行全表扫描。<br>4、应尽量避免在 where 子句中使用 or 来连接条件，如果一个字段有索引，一个字段没有索引，将导致引擎放弃使用索引而进行全表扫描，如：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num=<span class="number">10</span> or Name=<span class="string">'admin'</span></span><br></pre></td></tr></table></figure>
+
+<p>可以这样查询：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num=<span class="number">10</span> <span class="keyword">union</span> all select <span class="keyword">id</span> from t where Name=<span class="string">'admin'</span></span><br></pre></td></tr></table></figure>
+
+<p>5、in 和 not in 也要慎用，否则会导致全表扫描，如：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num <span class="keyword">in</span> (<span class="number">1</span>,<span class="number">2</span>,<span class="number">3</span>)</span><br></pre></td></tr></table></figure>
+
+<p>对于连续的数值，能用 between 就不要用 in 了：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num between <span class="number">1</span> and <span class="number">3</span></span><br></pre></td></tr></table></figure>
+
+<p>很多时候用 exists 代替 in 是一个好的选择：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select num from a where num <span class="keyword">in</span> (select num from b)</span><br></pre></td></tr></table></figure>
+
+<p>用下面的语句替换：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select num from a where exists (select <span class="number">1</span> from b where num=a.num)</span><br></pre></td></tr></table></figure>
+
+<p>6、下面的查询也将导致全表扫描：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where name like ‘%abc%’</span><br></pre></td></tr></table></figure>
+
+<p>若要提高效率，可以考虑全文检索。<br>7.如果在 where 子句中使用参数，也会导致全表扫描。因为SQL只有在运行时才会解析局部变量，但优化程序不能将访问计划的选择推迟到运行时；它必须在编译时进行选择。然 而，如果在编译时建立访问计划，变量的值还是未知的，因而无法作为索引选择的输入项。如下面语句将进行全表扫描：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num=@num</span><br></pre></td></tr></table></figure>
+
+<p>可以改为强制查询使用索引：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t with (index(索引名)) where num=@num</span><br></pre></td></tr></table></figure>
+
+<p>应尽量避免在 where 子句中对字段进行表达式操作，这将导致引擎放弃使用索引而进行全表扫描。如：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num/<span class="number">2</span>=<span class="number">100</span></span><br></pre></td></tr></table></figure>
+
+<p>应改为:</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where num=<span class="number">100</span>*<span class="number">2</span></span><br></pre></td></tr></table></figure>
+
+<p>9、应尽量避免在where子句中对字段进行函数操作，这将导致引擎放弃使用索引而进行全表扫描。如：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where substring(name,<span class="number">1</span>,<span class="number">3</span>)=’abc’ -–name以abc开头的<span class="keyword">id</span></span><br><span class="line">select <span class="keyword">id</span> from t where datediff(day,createdate,’<span class="number">2015</span><span class="number">-11</span><span class="number">-30</span>′)=<span class="number">0</span> -–‘<span class="number">2015</span><span class="number">-11</span><span class="number">-30</span>’ --生成的<span class="keyword">id</span></span><br></pre></td></tr></table></figure>
+
+<p>应改为:</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select <span class="keyword">id</span> from t where name like<span class="string">'abc%'</span></span><br><span class="line">select <span class="keyword">id</span> from t where createdate&gt;=<span class="string">'2005-11-30'</span> and createdate&lt;<span class="string">'2005-12-1'</span></span><br></pre></td></tr></table></figure>
+
+<p>10、不要在 where 子句中的“=”左边进行函数、算术运算或其他表达式运算，否则系统将可能无法正确使用索引。<br>11、在使用索引字段作为条件时，如果该索引是复合索引，那么必须使用到该索引中的第一个字段作为条件时才能保证系统使用该索引，否则该索引将不会被使用，并且应尽可能的让字段顺序与索引顺序相一致。<br>12、不要写一些没有意义的查询，如需要生成一个空表结构：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select col1,col2 into <span class="meta">#t from t where1=0</span></span><br></pre></td></tr></table></figure>
+
+<p>这类代码不会返回任何结果集，但是会消耗系统资源的，应改成这样：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">create table <span class="meta">#t(…)</span></span><br></pre></td></tr></table></figure>
+
+<p>13、Update 语句，如果只更改1、2个字段，不要Update全部字段，否则频繁调用会引起明显的性能消耗，同时带来大量日志。<br>14、对于多张大数据量（这里几百条就算大了）的表JOIN，要先分页再JOIN，否则逻辑读会很高，性能很差。<br>15、select count(*) from table；这样不带任何条件的count会引起全表扫描，并且没有任何业务意义，是一定要杜绝的。<br>16、索引并不是越多越好，索引固然可以提高相应的 select 的效率，但同时也降低了 insert 及 update 的效率，因为 insert 或 update 时有可能会重建索引，所以怎样建索引需要慎重考虑，视具体情况而定。一个表的索引数最好不要超过6个，若太多则应考虑一些不常使用到的列上建的索引是否有 必要。<br>17、应尽可能的避免更新 clustered 索引数据列，因为 clustered 索引数据列的顺序就是表记录的物理存储顺序，一旦该列值改变将导致整个表记录的顺序的调整，会耗费相当大的资源。若应用系统需要频繁更新 clustered 索引数据列，那么需要考虑是否应将该索引建为 clustered 索引。<br>18、尽量使用数字型字段，若只含数值信息的字段尽量不要设计为字符型，这会降低查询和连接的性能，并会增加存储开销。这是因为引擎在处理查询和连 接时会逐个比较字符串中每一个字符，而对于数字型而言只需要比较一次就够了。<br>19、尽可能的使用 varchar/nvarchar 代替 char/nchar ，因为首先变长字段存储空间小，可以节省存储空间，其次对于查询来说，在一个相对较小的字段内搜索效率显然要高些。<br>20.任何地方都不要使用</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line">select * from t</span><br></pre></td></tr></table></figure>
+
+<p>用具体的字段列表代替“*”，不要返回用不到的任何字段。<br>21、尽量使用表变量来代替临时表。如果表变量包含大量数据，请注意索引非常有限（只有主键索引）。<br>22、避免频繁创建和删除临时表，以减少系统表资源的消耗。临时表并不是不可使用，适当地使用它们可以使某些例程更有效，例如，当需要重复引用大型表或常用表中的某个数据集时。但是，对于一次性事件， 最好使用导出表。<br>23、在新建临时表时，如果一次性插入数据量很大，那么可以使用 select into 代替 create table，避免造成大量 log ，以提高速度；如果数据量不大，为了缓和系统表的资源，应先create table，然后insert。<br>24、如果使用到了临时表，在存储过程的最后务必将所有的临时表显式删除，先 truncate table ，然后 drop table ，这样可以避免系统表的较长时间锁定。<br>25、尽量避免使用游标，因为游标的效率较差，如果游标操作的数据超过1万行，那么就应该考虑改写。<br>26、使用基于游标的方法或临时表方法之前，应先寻找基于集的解决方案来解决问题，基于集的方法通常更有效。<br>27、与临时表一样，游标并不是不可使用。对小型数据集使用 FAST_FORWARD 游标通常要优于其他逐行处理方法，尤其是在必须引用几个表才能获得所需的数据时。在结果集中包括“合计”的例程通常要比使用游标执行的速度快。如果开发时 间允许，基于游标的方法和基于集的方法都可以尝试一下，看哪一种方法的效果更好。<br>28、在所有的存储过程和触发器的开始处设置 SET NOCOUNT ON ，在结束时设置 SET NOCOUNT OFF 。无需在执行存储过程和触发器的每个语句后向客户端发送 DONE_IN_PROC 消息。<br>29、尽量避免大事务操作，提高系统并发能力。<br>30、尽量避免向客户端返回大数据量，若数据量过大，应该考虑相应需求是否合理。<br>实际案例分析：拆分大的 DELETE 或INSERT 语句，批量提交SQL语句<br>如果你需要在一个在线的网站上去执行一个大的 DELETE 或 INSERT 查询，你需要非常小心，要避免你的操作让你的整个网站停止相应。因为这两个操作是会锁表的，表一锁住了，别的操作都进不来了。<br>Apache 会有很多的子进程或线程。所以，其工作起来相当有效率，而我们的服务器也不希望有太多的子进程，线程和数据库链接，这是极大的占服务器资源的事情，尤其是内存。<br>如果你把你的表锁上一段时间，比如30秒钟，那么对于一个有很高访问量的站点来说，这30秒所积累的访问进程/线程，数据库链接，打开的文件数，可能不仅仅会让你的WEB服务崩溃，还可能会让你的整台服务器马上挂了。<br>所以，如果你有一个大的处理，你一定把其拆分，使用 LIMIT oracle(rownum),sqlserver(top)条件是一个好的方法。下面是一个mysql示例：</p>
+<figure class="highlight objc"><table><tr><td class="code"><pre><span class="line"><span class="keyword">while</span> (<span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">&#123;</span><br><span class="line">    <span class="comment">//每次只做1000条</span></span><br><span class="line">    mysql_query(“delete from logs where log_date &lt;= ’<span class="number">2015</span><span class="number">-11</span><span class="number">-01</span>’ limit <span class="number">1000</span>”);</span><br><span class="line">    <span class="keyword">if</span> (mysql_affected_rows() == <span class="number">0</span>)</span><br><span class="line">    &#123;</span><br><span class="line">       <span class="comment">// 删除完成，退出！</span></span><br><span class="line">       <span class="keyword">break</span>；</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 每次暂停一段时间，释放表让其他进程/线程访问。</span></span><br><span class="line">    usleep(<span class="number">50000</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>]]></content>
+      <categories>
+        <category>MySql</category>
+      </categories>
+  </entry>
+  <entry>
     <title>Python2.x与3.x版本区别</title>
     <url>/blog/2020/11/09/Python2-x%E4%B8%8E3-x%E7%89%88%E6%9C%AC%E5%8C%BA%E5%88%AB/</url>
+    <content><![CDATA[<p>[TOC]</p>
+<blockquote>
+<p>以下为网络学习的知识，时间太久出处不可考证，但作为本人知识的一部分保留在此，已备复习。</p>
+</blockquote>
+<p>Python的3.0版本，常被称为Python 3000，或简称Py3k。相对于Python的早期版本，这是一个较大的升级。</p>
+<p>为了不带入过多的累赘，Python 3.0在设计的时候没有考虑向下相容。</p>
+<p>为了照顾现有程式，Python 2.6作为一个过渡版本，基本使用了Python 2.x的语法和库，同时考虑了向Python 3.0的迁移，允许使用部分Python 3.0的语法与函数。</p>
+<p>新的Python程式建议使用Python 3.0版本的语法。</p>
+<p><code>PIL</code>可以使用 <code>Pillow</code> 代替。</p>
+<p><code>Pillow &gt;= 2.0.0 supports Python versions 2.6, 2.7, 3.2, 3.3, 3.4, 3.5</code></p>
+<p>大多数第三方库都正在努力地相容Python 3.0版本。即使无法立即使用Python 3.0，也建议编写相容Python 3.0版本的程式，然后使用Python 2.7来执行。</p>
+<a id="more"></a>
+
+<p>Python 3.0的变化主要在以下几个方面:</p>
+<hr>
+<h2 id="print-函数"><a href="#print-函数" class="headerlink" title="print 函数"></a>print 函数</h2><p>print语句没有了，取而代之的是print()函数。 Python 2.6与Python 2.7部分地支持这种形式的print语法。在Python 2.6与Python 2.7里面，以下三种形式是等价的：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">print &quot;good wood&quot;</span><br><span class="line">print (&quot;good wood&quot;) #注意print后面有个空格</span><br><span class="line">print(&quot;good wood&quot;) #print()不能带有任何其它参数</span><br></pre></td></tr></table></figure>
+
+<p>然而，Python 2.6实际已经支持新的print()语法：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">from __future__ import print_function</span><br><span class="line">print(&quot;good&quot;, &quot;wood&quot;, sep&#x3D;&#39;, &#39;)</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Unicode"><a href="#Unicode" class="headerlink" title="Unicode"></a>Unicode</h2><p>Python 2 有 ASCII str() 类型，unicode() 是单独的，不是 byte 类型。</p>
+<p>现在， 在 Python 3，我们最终有了 Unicode (utf-8) 字符串，以及一个字节类：byte 和 bytearrays。</p>
+<p>由于 Python3.X 源码文件默认使用utf-8编码，这就使得以下代码是合法的：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; 中国 &#x3D; &#39;china&#39; </span><br><span class="line">&gt;&gt;&gt;print(中国) </span><br><span class="line">china</span><br></pre></td></tr></table></figure>
+
+<p>Python 2.x</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; str &#x3D; &quot;我爱北京天安门&quot;</span><br><span class="line">&gt;&gt;&gt; str</span><br><span class="line">&#39;\xe6\x88\x91\xe7\x88\xb1\xe5\x8c\x97\xe4\xba\xac\xe5\xa4\xa9\xe5\xae\x89\xe9\x97\xa8&#39;</span><br><span class="line">&gt;&gt;&gt; str &#x3D; u&quot;我爱北京天安门&quot;</span><br><span class="line">&gt;&gt;&gt; str</span><br><span class="line">u&#39;\u6211\u7231\u5317\u4eac\u5929\u5b89\u95e8&#39;</span><br></pre></td></tr></table></figure>
+
+<p>Python 3.x</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; str &#x3D; &quot;我爱北京天安门&quot;</span><br><span class="line">&gt;&gt;&gt; str</span><br><span class="line">&#39;我爱北京天安门&#39;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="除法运算"><a href="#除法运算" class="headerlink" title="除法运算"></a>除法运算</h2><p>Python中的除法较其它语言显得非常高端，有套很复杂的规则。Python中的除法有两个运算符，/和//</p>
+<p>首先来说/除法:</p>
+<p>在python 2.x中/除法就跟我们熟悉的大多数语言，比如Java啊C啊差不多，整数相除的结果是一个整数，把小数部分完全忽略掉，浮点数除法会保留小数点的部分得到一个浮点数的结果。</p>
+<p>在python 3.x中/除法不再这么做了，对于整数之间的相除，结果也会是浮点数。</p>
+<p>Python 2.x:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; 1 &#x2F; 2</span><br><span class="line">0</span><br><span class="line">&gt;&gt;&gt; 1.0 &#x2F; 2.0</span><br><span class="line">0.5</span><br></pre></td></tr></table></figure>
+
+<p>Python 3.x:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; 1&#x2F;2</span><br><span class="line">0.5</span><br></pre></td></tr></table></figure>
+
+<p>而对于//除法，这种除法叫做floor除法，会对除法的结果自动进行一个floor操作，在python 2.x和python 3.x中是一致的。</p>
+<p>python 2.x:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; -1 &#x2F;&#x2F; 2</span><br><span class="line">-1</span><br></pre></td></tr></table></figure>
+
+<p>python 3.x:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; -1 &#x2F;&#x2F; 2</span><br><span class="line">-1</span><br></pre></td></tr></table></figure>
+
+<p>注意的是并不是舍弃小数部分，而是执行 floor 操作，如果要截取整数部分，那么需要使用 math 模块的 trunc 函数</p>
+<p>python 3.x:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; import math</span><br><span class="line">&gt;&gt;&gt; math.trunc(1 &#x2F; 2)</span><br><span class="line">0</span><br><span class="line">&gt;&gt;&gt; math.trunc(-1 &#x2F; 2)</span><br><span class="line">0</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="异常"><a href="#异常" class="headerlink" title="异常"></a>异常</h2><p>在 Python 3 中处理异常也轻微的改变了，在 Python 3 中我们现在使用 as 作为关键词。</p>
+<p>捕获异常的语法由 <strong>except exc, var</strong> 改为 <strong>except exc as var</strong>。</p>
+<p>使用语法except (exc1, exc2) as var可以同时捕获多种类别的异常。 Python 2.6已经支持这两种语法。</p>
+<ul>
+<li>\1. 在2.x时代，所有类型的对象都是可以被直接抛出的，在3.x时代，只有继承自BaseException的对象才可以被抛出。</li>
+<li>\2. 2.x raise语句使用逗号将抛出对象类型和参数分开，3.x取消了这种奇葩的写法，直接调用构造函数抛出对象即可。</li>
+</ul>
+<p>在2.x时代，异常在代码中除了表示程序错误，还经常做一些普通控制结构应该做的事情，在3.x中可以看出，设计者让异常变的更加专一，只有在错误发生的情况才能去用异常捕获语句来处理。</p>
+<hr>
+<h2 id="xrange"><a href="#xrange" class="headerlink" title="xrange"></a>xrange</h2><p>在 Python 2 中 xrange() 创建迭代对象的用法是非常流行的。比如： for 循环或者是列表/集合/字典推导式。</p>
+<p>这个表现十分像生成器（比如。”惰性求值”）。但是这个 xrange-iterable 是无穷的，意味着你可以无限遍历。</p>
+<p>由于它的惰性求值，如果你不得仅仅不遍历它一次，xrange() 函数 比 range() 更快（比如 for 循环）。尽管如此，对比迭代一次，不建议你重复迭代多次，因为生成器每次都从头开始。</p>
+<p>在 Python 3 中，range() 是像 xrange() 那样实现以至于一个专门的 xrange() 函数都不再存在（在 Python 3 中 xrange() 会抛出命名异常）。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">import timeit</span><br><span class="line"></span><br><span class="line">n &#x3D; 10000</span><br><span class="line">def test_range(n):</span><br><span class="line">    return for i in range(n):</span><br><span class="line">        pass</span><br><span class="line"></span><br><span class="line">def test_xrange(n):</span><br><span class="line">    for i in xrange(n):</span><br><span class="line">        pass</span><br></pre></td></tr></table></figure>
+
+<p>Python 2</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">print &#39;Python&#39;, python_version()</span><br><span class="line"></span><br><span class="line">print &#39;\ntiming range()&#39; </span><br><span class="line">%timeit test_range(n)</span><br><span class="line"></span><br><span class="line">print &#39;\n\ntiming xrange()&#39; </span><br><span class="line">%timeit test_xrange(n)</span><br><span class="line"></span><br><span class="line">Python 2.7.6</span><br><span class="line"></span><br><span class="line">timing range()</span><br><span class="line">1000 loops, best of 3: 433 µs per loop</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">timing xrange()</span><br><span class="line">1000 loops, best of 3: 350 µs per loop</span><br></pre></td></tr></table></figure>
+
+<p>Python 3</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">print(&#39;Python&#39;, python_version())</span><br><span class="line"></span><br><span class="line">print(&#39;\ntiming range()&#39;)</span><br><span class="line">%timeit test_range(n)</span><br><span class="line"></span><br><span class="line">Python 3.4.1</span><br><span class="line"></span><br><span class="line">timing range()</span><br><span class="line">1000 loops, best of 3: 520 µs per loop</span><br><span class="line">print(xrange(10))</span><br><span class="line">---------------------------------------------------------------------------</span><br><span class="line">NameError                                 Traceback (most recent call last)</span><br><span class="line">&lt;ipython-input-5-5d8f9b79ea70&gt; in &lt;module&gt;()</span><br><span class="line">----&gt; 1 print(xrange(10))</span><br><span class="line"></span><br><span class="line">NameError: name &#39;xrange&#39; is not defined</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="八进制字面量表示"><a href="#八进制字面量表示" class="headerlink" title="八进制字面量表示"></a>八进制字面量表示</h2><p>八进制数必须写成0o777，原来的形式0777不能用了；二进制必须写成0b111。</p>
+<p>新增了一个bin()函数用于将一个整数转换成二进制字串。 Python 2.6已经支持这两种语法。</p>
+<p>在Python 3.x中，表示八进制字面量的方式只有一种，就是0o1000。</p>
+<p>python 2.x</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; 0o1000</span><br><span class="line">512</span><br><span class="line">&gt;&gt;&gt; 01000</span><br><span class="line">512</span><br></pre></td></tr></table></figure>
+
+<p>python 3.x</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; 01000</span><br><span class="line">  File &quot;&lt;stdin&gt;&quot;, line 1</span><br><span class="line">    01000</span><br><span class="line">        ^</span><br><span class="line">SyntaxError: invalid token</span><br><span class="line">&gt;&gt;&gt; 0o1000</span><br><span class="line">512</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="不等运算符"><a href="#不等运算符" class="headerlink" title="不等运算符"></a>不等运算符</h2><p>Python 2.x中不等于有两种写法 != 和 &lt;&gt;</p>
+<p>Python 3.x中去掉了&lt;&gt;, 只有!=一种写法。当然，&lt;&gt;一次也没用过。</p>
+<hr>
+<h2 id="去掉了repr表达式"><a href="#去掉了repr表达式" class="headerlink" title="去掉了repr表达式"></a>去掉了repr表达式</h2><p>Python 2.x 中反引号``相当于repr函数的作用</p>
+<p>Python 3.x 中去掉了``这种写法，只允许使用repr函数，这样做的目的是为了使代码看上去更清晰了。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">def sendMail(from_: str, to: str, title: str, body: str) -&gt; bool:</span><br><span class="line">    pass</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="多个模块被改名（根据PEP8）"><a href="#多个模块被改名（根据PEP8）" class="headerlink" title="多个模块被改名（根据PEP8）"></a>多个模块被改名（根据PEP8）</h2><table>
+<thead>
+<tr>
+<th align="left">旧的名字</th>
+<th align="left">新的名字</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">_winreg</td>
+<td align="left">winreg</td>
+</tr>
+<tr>
+<td align="left">ConfigParser</td>
+<td align="left">configparser</td>
+</tr>
+<tr>
+<td align="left">copy_reg</td>
+<td align="left">copyreg</td>
+</tr>
+<tr>
+<td align="left">Queue</td>
+<td align="left">queue</td>
+</tr>
+<tr>
+<td align="left">SocketServer</td>
+<td align="left">socketserver</td>
+</tr>
+<tr>
+<td align="left">repr</td>
+<td align="left">reprlib</td>
+</tr>
+</tbody></table>
+<p>StringIO模块现在被合并到新的io模组内。 new, md5, gopherlib等模块被删除。 Python 2.6已经支援新的io模组。</p>
+<p>httplib, BaseHTTPServer, CGIHTTPServer, SimpleHTTPServer, Cookie, cookielib被合并到http包内。</p>
+<p>取消了exec语句，只剩下exec()函数。 Python 2.6已经支援exec()函数。</p>
+<hr>
+<h2 id="数据类型"><a href="#数据类型" class="headerlink" title="数据类型"></a>数据类型</h2><p>1）Py3.X去除了long类型，现在只有一种整型——int，但它的行为就像2.X版本的long</p>
+<p>2）新增了bytes类型，对应于2.X版本的八位串，定义一个bytes字面量的方法如下：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; b &#x3D; b&#39;china&#39; </span><br><span class="line">&gt;&gt;&gt; type(b) </span><br><span class="line">&lt;type &#39;bytes&#39;&gt;</span><br></pre></td></tr></table></figure>
+
+<p>str 对象和 bytes 对象可以使用 .encode() (<strong>str -&gt; bytes</strong>) 或 .decode() (<strong>bytes -&gt; str</strong>)方法相互转化。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; s &#x3D; b.decode() </span><br><span class="line">&gt;&gt;&gt; s </span><br><span class="line">&#39;china&#39; </span><br><span class="line">&gt;&gt;&gt; b1 &#x3D; s.encode() </span><br><span class="line">&gt;&gt;&gt; b1 </span><br><span class="line">b&#39;china&#39;</span><br></pre></td></tr></table></figure>
+
+<p>3）dict的.keys()、.items 和.values()方法返回迭代器，而之前的iterkeys()等函数都被废弃。同时去掉的还有 dict.has_key()，用 in替代它吧 。</p>
+<p>这三个函数号称是函数式编程的代表。在 Python3.x 和 Python2.x 中也有了很大的差异。</p>
+<p>首先我们先简单的在 Python2.x 的交互下输入 map 和 filter,看到它们两者的类型是 built-in function(内置函数):</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; map</span><br><span class="line">&lt;built-in function map&gt;</span><br><span class="line">&gt;&gt;&gt; filter</span><br><span class="line">&lt;built-in function filter&gt;</span><br><span class="line">&gt;&gt;&gt;</span><br></pre></td></tr></table></figure>
+
+<p>它们输出的结果类型都是列表:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; map(lambda x:x *2, [1,2,3])</span><br><span class="line">[2, 4, 6]</span><br><span class="line">&gt;&gt;&gt; filter(lambda x:x %2 &#x3D;&#x3D;0,range(10))</span><br><span class="line">[0, 2, 4, 6, 8]</span><br><span class="line">&gt;&gt;&gt;</span><br></pre></td></tr></table></figure>
+
+<p>但是在Python 3.x中它们却不是这个样子了：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; map</span><br><span class="line">&lt;class &#39;map&#39;&gt;</span><br><span class="line">&gt;&gt;&gt; map(print,[1,2,3])</span><br><span class="line">&lt;map object at 0x10d8bd400&gt;</span><br><span class="line">&gt;&gt;&gt; filter</span><br><span class="line">&lt;class &#39;filter&#39;&gt;</span><br><span class="line">&gt;&gt;&gt; filter(lambda x:x % 2 &#x3D;&#x3D; 0, range(10))</span><br><span class="line">&lt;filter object at 0x10d8bd3c8&gt;</span><br><span class="line">&gt;&gt;&gt;</span><br></pre></td></tr></table></figure>
+
+<p>首先它们从函数变成了类，其次，它们的返回结果也从当初的列表成了一个可迭代的对象, 我们尝试用 next 函数来进行手工迭代:</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">&gt;&gt;&gt; f &#x3D;filter(lambda x:x %2 &#x3D;&#x3D;0, range(10))</span><br><span class="line">&gt;&gt;&gt; next(f)</span><br><span class="line">0</span><br><span class="line">&gt;&gt;&gt; next(f)</span><br><span class="line">2</span><br><span class="line">&gt;&gt;&gt; next(f)</span><br><span class="line">4</span><br><span class="line">&gt;&gt;&gt; next(f)</span><br><span class="line">6</span><br><span class="line">&gt;&gt;&gt;</span><br></pre></td></tr></table></figure>
+
+<p>对于比较高端的 reduce 函数，它在 Python 3.x 中已经不属于 built-in 了，被挪到 functools 模块当中。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">from functools import reduce</span><br><span class="line"></span><br><span class="line">def add(x,y):</span><br><span class="line">    return x + y</span><br><span class="line"></span><br><span class="line">print (reduce(add, range(1, 101)))</span><br></pre></td></tr></table></figure>
+]]></content>
+      <categories>
+        <category>Python</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>安装ipython3</title>
+    <url>/blog/2020/11/22/%E5%AE%89%E8%A3%85ipython3/</url>
+    <content><![CDATA[<p>[TOC]</p>
+<h3 id="使用pip3安装，简单方便"><a href="#使用pip3安装，简单方便" class="headerlink" title="使用pip3安装，简单方便"></a>使用pip3安装，简单方便</h3><figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">pip3 install ipython</span><br></pre></td></tr></table></figure>
+
+
+<h3 id="国内安装"><a href="#国内安装" class="headerlink" title="国内安装"></a>国内安装</h3><p>使用douban的源来安装</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">pip3 install ipython --trusted-host pypi.douban.com -i http://pypi.douban.com/simple</span><br></pre></td></tr></table></figure>
+
+<h3 id="ipython-的安装目录"><a href="#ipython-的安装目录" class="headerlink" title="ipython 的安装目录"></a>ipython 的安装目录</h3>]]></content>
+      <categories>
+        <category>Python</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>如何打包项目需要的rpm包</title>
+    <url>/blog/2020/11/22/%E5%A6%82%E4%BD%95%E6%89%93%E5%8C%85%E9%A1%B9%E7%9B%AE%E9%9C%80%E8%A6%81%E7%9A%84rpm%E5%8C%85/</url>
+    <content><![CDATA[<p>[Toc]</p>
+<p>本文档介绍使用<code>rpmbuild</code>打包rpm包，使安装过程简化并统一化。</p>
+<h2 id="环境准备"><a href="#环境准备" class="headerlink" title="环境准备"></a>环境准备</h2><ul>
+<li>centos7环境或其他rpm环境</li>
+<li><code>yum install rpmbuild</code></li>
+</ul>
+<h2 id="以java程序为例的打包过程"><a href="#以java程序为例的打包过程" class="headerlink" title="以java程序为例的打包过程"></a>以java程序为例的打包过程</h2><h3 id="建立目录"><a href="#建立目录" class="headerlink" title="建立目录"></a>建立目录</h3><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">├── bin          <span class="comment"># 可执行文件目录</span></span><br><span class="line">├── conf         <span class="comment"># 配置文件目录</span></span><br><span class="line">├── lib          <span class="comment"># 项目所有依赖包目录</span></span><br><span class="line">├── logs         <span class="comment"># 项目日志文件目录</span></span><br><span class="line">└── sys          <span class="comment"># 项目系统文件目录</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="目录样例"><a href="#目录样例" class="headerlink" title="目录样例"></a>目录样例</h4><h5 id="bin"><a href="#bin" class="headerlink" title="- bin"></a>- bin</h5><p>目录中存放项目启动脚本和停止脚本（如果必要），并命名为： <code>start.sh</code> 和 <code>stop.sh</code></p>
+<p>start.sh简单样例，替换掉<code>&lt;main-class&gt;</code></p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="meta">#!/bin/bash</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">source</span> /etc/profile</span><br><span class="line"></span><br><span class="line">java -Xmx4g -Xms2g -Dconfig.file=conf/application.conf -cp <span class="string">'libs/*'</span> &lt;main-class&gt; &gt; logs/output.log 2&gt;&amp;1</span><br></pre></td></tr></table></figure>
+
+<h5 id="conf"><a href="#conf" class="headerlink" title="- conf"></a>- conf</h5><p>目录中存放项目的配置文件和环境变量。配置文件通用命名为： <code>application.conf</code> 和 <code>application.env</code> 。有些项目还需要其他配置文件，如：log4j.properties、application.properties、spark-defaults.conf 等。</p>
+<h5 id="lib"><a href="#lib" class="headerlink" title="- lib"></a>- lib</h5><p>目录中存放项目依赖的所有jar包。</p>
+<h5 id="logs"><a href="#logs" class="headerlink" title="- logs"></a>- logs</h5><p>目录中存放输出日志和程序日志。</p>
+<h5 id="sys"><a href="#sys" class="headerlink" title="- sys"></a>- sys</h5><p>目录中存放项目中需要用到的系统文件，如: <code>xxx.service</code></p>
+<p>系统文件分为几类：</p>
+<ul>
+<li><p>service启动文件。项目依赖systemd来管理系统中的服务，所以需要编写<code>service</code>文件。</p>
+<ul>
+<li>service启动文件存放到<code>/usr/lib/systemd/system/</code>目录下，名称以服务名命名。如: <code>neo4j.service</code></li>
+</ul>
+</li>
+<li><p>ulimit配置文件。项目需要修改ulimit的nofile等配置，需要添加ulimit文件。<strong>ulimit文件只对登录用户有效,对service无效，service中修改ulimit需要通过特殊参数指定</strong></p>
+<ul>
+<li>ulimit文件，存放到<code>/etc/security/limits.d/</code> 名称以服务名命名, 如： <code>neo4j.conf</code></li>
+</ul>
+</li>
+<li><p>环境变量文件。项目需要设定某些环境变量,如：<code>XXX_HOME</code>和<code>PATH</code>等</p>
+<ul>
+<li>环境变量文件，存放到<code>/etc/profile.d/</code>，名称以服务名命名，如：<code>java.sh</code></li>
+</ul>
+</li>
+</ul>
+<h2 id="使用rpmbuild打包"><a href="#使用rpmbuild打包" class="headerlink" title="使用rpmbuild打包"></a>使用rpmbuild打包</h2><h3 id="编写spec文件"><a href="#编写spec文件" class="headerlink" title="编写spec文件"></a>编写spec文件</h3><p>spec文件是rpm打包的规则脚本，通过编写spec文件可以控制打包过程。这里提供一个简单的spec样例。</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">Name:		xxxx                                <span class="comment"># 服务名,包名</span></span><br><span class="line">Version:	2.8.10                            <span class="comment"># 版本号</span></span><br><span class="line">Release:	1%&#123;?dist&#125;                         <span class="comment"># 第几次发布</span></span><br><span class="line">Summary:	This is xxx package               <span class="comment"># 包摘要</span></span><br><span class="line"></span><br><span class="line">Group:		xx                                <span class="comment"># 组织</span></span><br><span class="line">License:	None                              <span class="comment"># 公司内部发布，就不用协议了</span></span><br><span class="line"><span class="comment">#URL:                                       </span></span><br><span class="line">Source0:	%&#123;name&#125;-%&#123;version&#125;.tar.gz         <span class="comment"># 资源包名称</span></span><br><span class="line"></span><br><span class="line"><span class="comment">#BuildRequires:</span></span><br><span class="line"><span class="comment">#Requires:</span></span><br><span class="line"></span><br><span class="line">%description                                <span class="comment"># 包描述</span></span><br><span class="line">xxx</span><br><span class="line"></span><br><span class="line">%prep</span><br><span class="line">%setup -q</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">%install                                     <span class="comment"># 安装过程，定义好各文件释放位置</span></span><br><span class="line">rm -rf <span class="variable">$RPM_BUILD_ROOT</span></span><br><span class="line">install -d <span class="variable">$RPM_BUILD_ROOT</span>/</span><br><span class="line">mkdir -p <span class="variable">$&#123;RPM_BUILD_ROOT&#125;</span>/opt/backend/xxxx</span><br><span class="line">cp -a * <span class="variable">$RPM_BUILD_ROOT</span>/opt/backend/xxxx</span><br><span class="line">mkdir -p <span class="variable">$&#123;RPM_BUILD_ROOT&#125;</span>/usr/lib/systemd/system</span><br><span class="line">cp sys/xxxx.service <span class="variable">$RPM_BUILD_ROOT</span>/usr/lib/systemd/system/</span><br><span class="line"></span><br><span class="line">%clean</span><br><span class="line">rm -rf <span class="variable">$RPM_BUILD_ROOT</span></span><br><span class="line"></span><br><span class="line">%pre</span><br><span class="line">mkdir -p /opt/backend/</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">%post                                        <span class="comment"># 安装完成后刷新systemctl，保证service生效</span></span><br><span class="line">systemctl daemon-reload</span><br><span class="line"></span><br><span class="line">%files</span><br><span class="line"><span class="comment">#%defattr(755,root,root,-)                   # 项目目录和文件，防止冲突</span></span><br><span class="line">/opt/backend/xxxx</span><br><span class="line">/usr/lib/systemd/system/xxxx.service</span><br><span class="line">%config /opt/backend/xxxx/conf/application.conf     <span class="comment"># 配置文件位置，重复安装文件会被保存成`&lt;name&gt;.rpmsave`</span></span><br><span class="line"></span><br><span class="line">%doc</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">%changelog</span><br><span class="line">- 变更记录</span><br></pre></td></tr></table></figure>
+
+
+
+<p>更多spec编写规则请参考, 参考资料[1]</p>
+<p>编写service文件，样例如下：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">[Unit]</span><br><span class="line">Description=xxxx</span><br><span class="line">After=network.target xxxx.service</span><br><span class="line"></span><br><span class="line">[Service]</span><br><span class="line">Restart=always</span><br><span class="line">RestartSec=60</span><br><span class="line">WorkingDirectory=/opt/backend/xxxx</span><br><span class="line">Environment=<span class="string">"HADOOP_CONF_DIR=/opt/backend/hadoop/etc/hadoop"</span></span><br><span class="line">EnvironmentFile=-/opt/backend/hadoop/etc/hadoop/hadoop.env</span><br><span class="line">ExecStart=/opt/backend/xxxx/bin/start.sh</span><br><span class="line">ExecStop=/bin/<span class="built_in">kill</span> -s HUP <span class="variable">$MAINPID</span></span><br><span class="line"></span><br><span class="line">[Install]</span><br><span class="line">WantedBy=multi-user.target</span><br></pre></td></tr></table></figure>
+
+
+
+<p>编写limit文件,样例如下：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment">#*               soft    core            0</span></span><br><span class="line"><span class="comment">##*               hard    rss             10000</span></span><br><span class="line"><span class="comment">##@student        hard    nproc           20</span></span><br><span class="line"><span class="comment">##@faculty        soft    nproc           20</span></span><br><span class="line"><span class="comment">##@faculty        hard    nproc           50</span></span><br><span class="line"><span class="comment">##ftp             hard    nproc           0</span></span><br><span class="line"><span class="comment">##@student        -       maxlogins       4</span></span><br><span class="line"><span class="comment">#</span></span><br><span class="line">*                 hard    nofile          65530</span><br><span class="line">*                 soft    nofile          65530</span><br></pre></td></tr></table></figure>
+
+
+
+<p>编写profile文件，样例如下：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment">#</span></span><br><span class="line"><span class="comment"># mv this file to /opt/profile.d/hdfs.sh</span></span><br><span class="line"><span class="built_in">export</span> HADOOP_HOME=/opt/backend/hadoop</span><br><span class="line"></span><br><span class="line"><span class="built_in">source</span> <span class="variable">$&#123;HADOOP_HOME&#125;</span>/etc/hadoop/hadoop.env</span><br><span class="line"></span><br><span class="line"><span class="built_in">export</span> HADOOP_CONF_DIR=/opt/backend/hadoop/etc/hadoop</span><br><span class="line"><span class="built_in">export</span> PATH=<span class="variable">$PATH</span>:<span class="variable">$HADOOP_HOME</span>/bin</span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="项目打包"><a href="#项目打包" class="headerlink" title="项目打包"></a>项目打包</h3><h4 id="rpmbuild目录介绍"><a href="#rpmbuild目录介绍" class="headerlink" title="rpmbuild目录介绍"></a>rpmbuild目录介绍</h4><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">├── BUILD                      <span class="comment"># 打包过程中的工作目录</span></span><br><span class="line">├── BUILDROOT</span><br><span class="line">├── RPMS                       <span class="comment"># 存放生成的二进制包</span></span><br><span class="line">├── SOURCES                    <span class="comment"># 放置打包资源，包括源码打包文件和补丁文件等</span></span><br><span class="line">├── SPECS                      <span class="comment"># 放置SPEC文档</span></span><br><span class="line">└── SRPMS                      <span class="comment"># 存放生成的源码包</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="将代码打包并存放到资源目录"><a href="#将代码打包并存放到资源目录" class="headerlink" title="将代码打包并存放到资源目录"></a>将代码打包并存放到资源目录</h4><p><code>~/rpmbuild/SOURCES/&lt;name&gt;-&lt;version&gt;.tar.gz</code></p>
+<h4 id="打包"><a href="#打包" class="headerlink" title="打包"></a>打包</h4><p><code>rpmbuild -ba SPECS/&lt;name&gt;.spec</code></p>
+<h4 id="获取包"><a href="#获取包" class="headerlink" title="获取包"></a>获取包</h4><p><code>ls ~/rpmbuild/RPMS/x86_64/&lt;name&gt;-&lt;version&gt;-&lt;release&gt;.el7.x86_64.rpm</code></p>
+<p>其中，</p>
+<p>​    el7是centos7的环境，也可以打成cetnos8的环境包</p>
+<p>​    x86_64是x86_64的包</p>
+<h2 id="分发安装包"><a href="#分发安装包" class="headerlink" title="分发安装包"></a>分发安装包</h2><p>将安装包上传到<code>nexus</code>服务上，并设置开放权限。</p>
+<h2 id="提高"><a href="#提高" class="headerlink" title="提高"></a>提高</h2><p>[1] <a href="https://www.cnblogs.com/panwenbin-logs/p/7822087.html" target="_blank" rel="noopener">使用FPM打包工具打rpm包</a></p>
+<p>[2] <a href="https://sbt-native-packager.readthedocs.io/en/stable/" target="_blank" rel="noopener">sbt-native-packager</a></p>
+<p>[3] <a href="https://www.mojohaus.org/rpm-maven-plugin/" target="_blank" rel="noopener">rpm-maven-plugin</a></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>[1] <a href="http://ftp.rpm.org/max-rpm/s1-rpm-build-creating-spec-file.html" target="_blank" rel="noopener">Creating the Spec File</a></p>
+<p>[2] <a href="http://www.jinbuguo.com/systemd/systemd.service.html" target="_blank" rel="noopener">systemd.service 中文手册</a></p>
+<p>[3] [Systemd 入门教程]</p>
+]]></content>
+      <categories>
+        <category>DevOps</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>编译python的rpm包时遇到的问题</title>
+    <url>/blog/2020/11/22/%E7%BC%96%E8%AF%91python%E7%9A%84rpm%E5%8C%85%E6%97%B6%E9%81%87%E5%88%B0%E7%9A%84%E9%97%AE%E9%A2%98/</url>
     <content><![CDATA[]]></content>
+  </entry>
+  <entry>
+    <title>Python3简繁转换</title>
+    <url>/blog/2020/11/22/Python3%E7%AE%80%E7%B9%81%E8%BD%AC%E6%8D%A2/</url>
+    <content><![CDATA[<blockquote>
+<p>以下为网络学习的知识，时间太久出处不可考证，但作为本人知识的一部分保留在此，已备复习。</p>
+</blockquote>
+<p>github—-&gt;<a href="https://github.com/skydark/nstools/tree/master/zhtools" target="_blank" rel="noopener">https://github.com/skydark/nstools/tree/master/zhtools</a></p>
+<p>下载该项目中的 zh_wiki.py  和 langconv.py 两个文件,放到python代码目录下</p>
+<a id="more"></a>
+
+<p><strong>例如：</strong></p>
+<p>创建util包将下载zh_wiki.py和langconv.py放到该目录下面，然后新建simplified_traditional.py文件</p>
+<p>simplified_traditional.py</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">#!&#x2F;usr&#x2F;bin&#x2F;env python</span><br><span class="line"># -*- coding: utf-8 -*-</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">from util.langconv import Converter</span><br><span class="line"></span><br><span class="line">def cat_to_chs(sentence): # 传入参数为列表</span><br><span class="line">        &quot;&quot;&quot;</span><br><span class="line">        将繁体转换成简体</span><br><span class="line">        :param line:</span><br><span class="line">        :return:</span><br><span class="line">        &quot;&quot;&quot;</span><br><span class="line">        sentence &#x3D;&quot;,&quot;.join(sentence)</span><br><span class="line">        sentence &#x3D; Converter(&#39;zh-hans&#39;).convert(sentence)</span><br><span class="line">        sentence.encode(&#39;utf-8&#39;)</span><br><span class="line">        return sentence.split(&quot;,&quot;)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">def chs_to_cht(sentence): # 传入参数为列表</span><br><span class="line">        &quot;&quot;&quot;</span><br><span class="line">        将简体转换成繁体</span><br><span class="line">        :param sentence:</span><br><span class="line">        :return:</span><br><span class="line">        &quot;&quot;&quot;</span><br><span class="line">        sentence &#x3D;&quot;,&quot;.join(sentence)</span><br><span class="line">        sentence &#x3D; Converter(&#39;zh-hant&#39;).convert(sentence)</span><br><span class="line">        sentence.encode(&#39;utf-8&#39;)</span><br><span class="line">        return sentence.split(&quot;,&quot;)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">if __name__ &#x3D;&#x3D; &#39;__main__&#39;:</span><br><span class="line">　　line_chs &#x3D; [&#39;鸡鸡&#39;, &#39;虎&#39;, &#39;牛&#39;, &#39;猪&#39;, &#39;虎&#39;, &#39;兔&#39;]</span><br><span class="line">　　line_cht &#x3D; [&#39;雞雞&#39;, &#39;虎&#39;, &#39;牛&#39;, &#39;豬&#39;, &#39;虎&#39;, &#39;兔&#39;]</span><br><span class="line">　　rest_fon &#x3D; chs_to_cht(line_chs) </span><br><span class="line">　　print(&quot;简体转换成繁体:&#123;0&#125;&quot;.format(rest_fon))</span><br><span class="line"></span><br><span class="line">　　rest_chinese &#x3D; cat_to_chs(line_cht)</span><br><span class="line">　　print(&quot;简体转换成简体:&#123;0&#125;&quot;.format(rest_chinese))</span><br></pre></td></tr></table></figure>]]></content>
       <categories>
         <category>Python</category>
       </categories>

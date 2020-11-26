@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/blog/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/blog/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/blog/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/blog/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/blog/css/main.css">
+
+
+<link rel="stylesheet" href="/blog/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"cnsinger.github.io","root":"/blog/","scheme":"Mist","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"hide","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="[TOC] 什么是Prometheus?Prometheus是由SoundCloud开发的开源监控报警系统和时序列数据库(TSDB)。Prometheus使用Go语言开发，是Google BorgMon监控系统的开源版本。2016年由Google发起Linux基金会旗下的原生云基金会(Cloud Native Computing Foundation), 将Prometheus纳入其下第二大开源项">
+<meta property="og:type" content="article">
+<meta property="og:title" content="快速搭建Prometheus监控环境">
+<meta property="og:url" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/index.html">
+<meta property="og:site_name" content="AirCockLoft">
+<meta property="og:description" content="[TOC] 什么是Prometheus?Prometheus是由SoundCloud开发的开源监控报警系统和时序列数据库(TSDB)。Prometheus使用Go语言开发，是Google BorgMon监控系统的开源版本。2016年由Google发起Linux基金会旗下的原生云基金会(Cloud Native Computing Foundation), 将Prometheus纳入其下第二大开源项">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-architecture.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus.jpg">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/grafana-ui.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-datasource.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/use-ip.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/save-test.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/dashboard-import.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/grafana-dashboard.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/pushgateway.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-query.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/pushgateway-metrics.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/alertmanager-ui.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-alert.png">
+<meta property="og:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/consul-add.png">
+<meta property="article:published_time" content="2020-11-26T00:42:17.000Z">
+<meta property="article:modified_time" content="2020-11-26T17:29:28.000Z">
+<meta property="article:author" content="cnsinger">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-architecture.png">
+
+<link rel="canonical" href="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>快速搭建Prometheus监控环境 | AirCockLoft</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/blog/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">AirCockLoft</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/blog/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/blog/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/blog/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/blog/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/blog/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://cnsinger.github.io/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/blog/images/avatar.gif">
+      <meta itemprop="name" content="cnsinger">
+      <meta itemprop="description" content="Never stop thinking.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="AirCockLoft">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          快速搭建Prometheus监控环境
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2020-11-26 08:42:17" itemprop="dateCreated datePublished" datetime="2020-11-26T08:42:17+08:00">2020-11-26</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2020-11-27 01:29:28" itemprop="dateModified" datetime="2020-11-27T01:29:28+08:00">2020-11-27</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/blog/categories/DevOps/" itemprop="url" rel="index"><span itemprop="name">DevOps</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>[TOC]</p>
+<h2 id="什么是Prometheus"><a href="#什么是Prometheus" class="headerlink" title="什么是Prometheus?"></a>什么是Prometheus?</h2><p>Prometheus是由SoundCloud开发的开源监控报警系统和时序列数据库(TSDB)。Prometheus使用Go语言开发，是Google BorgMon监控系统的开源版本。<br>2016年由Google发起Linux基金会旗下的原生云基金会(Cloud Native Computing Foundation), 将Prometheus纳入其下第二大开源项目。<br>Prometheus目前在开源社区相当活跃。<br>Prometheus和Heapster(Heapster是K8S的一个子项目，用于获取集群的性能数据。)相比功能更完善、更全面。Prometheus性能也足够支撑上万台规模的集群。</p>
+<h2 id="Prometheus的特点"><a href="#Prometheus的特点" class="headerlink" title="Prometheus的特点"></a>Prometheus的特点</h2><ul>
+<li>多维度数据模型。</li>
+<li>灵活的查询语言。</li>
+<li>不依赖分布式存储，单个服务器节点是自主的。</li>
+<li>通过基于HTTP的pull方式采集时序数据。</li>
+<li>可以通过中间网关进行时序列数据推送。</li>
+<li>通过服务发现或者静态配置来发现目标服务对象。</li>
+<li>支持多种多样的图表和界面展示，比如Grafana等。</li>
+</ul>
+<p>官网地址：<a href="https://prometheus.io/" target="_blank" rel="noopener">https://prometheus.io/</a></p>
+<a id="more"></a>
+
+<h2 id="架构图"><a href="#架构图" class="headerlink" title="架构图"></a>架构图</h2><p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-architecture.png" alt="prometheus-architecture"></p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus.jpg" alt="prometheus"></p>
+<h2 id="基本原理"><a href="#基本原理" class="headerlink" title="基本原理"></a>基本原理</h2><p><code>Prometheus</code>的基本原理是通过HTTP协议周期性抓取被监控组件的状态，任意组件只要提供对应的HTTP接口就可以接入监控。这样做非常适合做虚拟化环境监控系统，比如<code>VM</code>、<code>Docker</code>、<code>Kubernetes</code>等。输出被监控组件信息的HTTP接口被叫做<code>exporter</code> 。目前常用的组件大部分都有<code>exporter</code>可以直接使用，比如<code>Nginx</code>、<code>MySQL</code>、Linux系统信息(包括磁盘、内存、CPU、网络等等)。针对<code>Java</code>类服务，还有专门的<code>jmx_exporter</code>。</p>
+<h2 id="服务流程简述"><a href="#服务流程简述" class="headerlink" title="服务流程简述"></a>服务流程简述</h2><ul>
+<li><code>Prometheus Daemon</code>负责定时去目标上抓取<code>metrics</code>数据，每个抓取目标需要暴露一个http服务的接口给它定时抓取。<code>Prometheus</code>支持通过配置文件、文本文件、Zookeeper、Consul、DNS SRV Lookup等方式指定抓取目标。<code>Prometheus</code>采用PULL的方式进行监控，即服务器可以直接通过目标PULL数据或者间接地通过中间网关来Push数据。</li>
+<li><code>Prometheus</code>在本地存储抓取的所有数据，并通过一定规则进行清理和整理数据，并把得到的结果存储到新的时间序列中。</li>
+<li><code>Prometheus</code>通过<code>PromQL</code>和其他API可视化地展示收集的数据。<code>Prometheus</code>支持很多方式的图表可视化，例如<code>Grafana</code>、自带的<code>Promdash</code>以及自身提供的模版引擎等等。<code>Prometheus</code>还提供HTTP API的查询方式，自定义所需要的输出。</li>
+<li><code>PushGateway</code>支持<code>Client</code>主动推送<code>metrics</code>到<code>PushGateway</code>，而<code>Prometheus</code>只是定时去<code>Gateway</code>上抓取数据。</li>
+<li><code>Alertmanager</code>是独立于<code>Prometheus</code>的一个组件，可以支持<code>Prometheus</code>的查询语句，提供十分灵活的报警方式。通过定制化<code>Hook</code>可以将报警推送到各种服务平台。</li>
+</ul>
+<h2 id="三大组件"><a href="#三大组件" class="headerlink" title="三大组件"></a>三大组件</h2><ul>
+<li><code>Prometheus</code>主要负责数据采集和存储，提供<code>PromQL</code>查询语言的支持。</li>
+<li><code>Alertmanager</code> 警告管理器，用来进行报警。</li>
+<li><code>PushGateway</code> 支持临时性Job主动推送指标的中间网关。</li>
+</ul>
+<h2 id="安装过程"><a href="#安装过程" class="headerlink" title="安装过程"></a>安装过程</h2><h3 id="安装准备"><a href="#安装准备" class="headerlink" title="安装准备"></a>安装准备</h3><p>准备<code>docker</code>和<code>docker-compose</code>环境。</p>
+<p>这里我的服务器IP是<code>xx.xx.xx.xx</code> ，准备建立文件夹。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">mkdir -p monitor/config</span><br><span class="line">mkdir -p monitor/config/prometheus/server</span><br><span class="line">mkdir -p monitor/config/prometheus/alertmanager</span><br><span class="line">touch monitor/config/prometheus/server/prometheus.yml</span><br><span class="line">touch monitor/config/prometheus/server/rules.yml</span><br><span class="line">chmod -R 777 monitor/config/prometheus/server</span><br><span class="line">touch monitor/config/prometheus/alertmanager/alertmanager.yml</span><br><span class="line">chmod 777 monitor/config/prometheus/alertmanager/alertmanager.yml</span><br><span class="line"></span><br><span class="line"><span class="comment"># 数据目录</span></span><br><span class="line">mkdir -p monitor/data/prometheus</span><br><span class="line">mkdir -p monitor/data/consul</span><br><span class="line">mkdir -p monitor/data/grafana</span><br></pre></td></tr></table></figure>
+
+<p>下面开始使用<code>docker-compose</code>快速启动所有组件。</p>
+<p>进入<code>monitor</code>目录，新建<code>docker-compose.yml</code></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line">version: &quot;3&quot;</span><br><span class="line">services:</span><br><span class="line">  prometheus:</span><br><span class="line">    image: prom&#x2F;prometheus:latest</span><br><span class="line">    volumes:</span><br><span class="line">      - .&#x2F;config&#x2F;prometheus&#x2F;server&#x2F;prometheus.yml:&#x2F;etc&#x2F;prometheus&#x2F;prometheus.yml</span><br><span class="line">      - .&#x2F;config&#x2F;prometheus&#x2F;server&#x2F;rules.yml:&#x2F;etc&#x2F;prometheus&#x2F;rules.yml</span><br><span class="line">      - .&#x2F;data&#x2F;prometheus:&#x2F;prometheus&#x2F;data</span><br><span class="line">    ports:</span><br><span class="line">      - &quot;9090:9090&quot;</span><br><span class="line">    command: [&quot;--config.file&#x3D;&#x2F;etc&#x2F;prometheus&#x2F;prometheus.yml&quot;, &quot;--web.enable-lifecycle&quot;]</span><br><span class="line"></span><br><span class="line">  node-exporter:</span><br><span class="line">    image: prom&#x2F;node-exporter:latest</span><br><span class="line">    ports:</span><br><span class="line">      - &quot;9100:9100&quot;</span><br><span class="line"></span><br><span class="line">  pushgateway:</span><br><span class="line">    image: prom&#x2F;pushgateway:latest</span><br><span class="line">    ports:</span><br><span class="line">      - &quot;9091:9091&quot;</span><br><span class="line"></span><br><span class="line">  alertmanager:</span><br><span class="line">    image: prom&#x2F;alertmanager:latest</span><br><span class="line">    volumes:</span><br><span class="line">      - .&#x2F;config&#x2F;prometheus&#x2F;alertmanager&#x2F;alertmanager.yml:&#x2F;etc&#x2F;alertmanager&#x2F;alertmanager.yml</span><br><span class="line">    ports:</span><br><span class="line">      - &quot;9093:9093&quot;</span><br><span class="line"></span><br><span class="line">  consul:</span><br><span class="line">    image: consul:latest</span><br><span class="line">    ports:</span><br><span class="line">      - &quot;8500:8500&quot;</span><br><span class="line">    volumes:</span><br><span class="line">      - .&#x2F;data&#x2F;consul:&#x2F;consul&#x2F;data</span><br><span class="line"></span><br><span class="line">  grafana:</span><br><span class="line">    image: grafana&#x2F;grafana:latest</span><br><span class="line">    ports:</span><br><span class="line">      - &quot;3000:3000&quot;</span><br><span class="line">    volumes:</span><br><span class="line">      - .&#x2F;data&#x2F;grafana:&#x2F;var&#x2F;lib&#x2F;grafana</span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="配置prometheus-server"><a href="#配置prometheus-server" class="headerlink" title="配置prometheus server"></a>配置<code>prometheus server</code></h3><p>配置文件：<code>monitor/prometheus/server/prometheus.yml</code></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">global:</span><br><span class="line">  scrape_interval:     15s <span class="comment"># 默认抓取间隔, 15秒向目标抓取一次数据。</span></span><br><span class="line">  external_labels:</span><br><span class="line">    monitor: <span class="string">'codelab-monitor'</span></span><br><span class="line"><span class="comment"># 这里表示抓取对象的配置</span></span><br><span class="line">scrape_configs:</span><br><span class="line">    <span class="comment">#这个配置是表示在这个配置内的时间序例，每一条都会自动添加上这个&#123;job_name:"prometheus"&#125;的标签</span></span><br><span class="line">  - job_name: <span class="string">'prometheus'</span></span><br><span class="line">    scrape_interval: 5s <span class="comment"># 重写了全局抓取间隔时间，由15秒重写成5秒</span></span><br><span class="line">    static_configs:</span><br><span class="line">      - targets: [<span class="string">'localhost:9090'</span>]</span><br><span class="line">      - targets: [<span class="string">'xx.xx.xx.xx:9100'</span>]</span><br><span class="line">        labels:</span><br><span class="line">          group: <span class="string">'client-node-exporter'</span></span><br><span class="line">      - targets: [<span class="string">'xx.xx.xx.xx:9091'</span>]</span><br><span class="line">        labels:</span><br><span class="line">          group: <span class="string">'pushgateway'</span></span><br><span class="line">    consul_sd_configs:</span><br><span class="line">    - server: <span class="string">'xx.xx.xx.xx:8500'</span></span><br><span class="line">      services: []</span><br><span class="line">alerting:</span><br><span class="line">  alertmanagers:</span><br><span class="line">    - static_configs:</span><br><span class="line">        - targets: [<span class="string">"xx.xx.xx.xx:9093"</span>]</span><br><span class="line">rule_files:      <span class="comment"># 告警规则文件</span></span><br><span class="line">   - <span class="string">'/etc/prometheus/rules.yml'</span></span><br></pre></td></tr></table></figure>
+
+
+
+<p>启动时加上–web.enable-lifecycle启用远程热加载配置文件<br>调用指令是<code>curl -X POST http://localhost:9090/-/reload</code>可以加载配置文件。</p>
+<h3 id="配置-alertmanager"><a href="#配置-alertmanager" class="headerlink" title="配置 alertmanager"></a>配置 <code>alertmanager</code></h3><p>配置文件: <code>monitor/prometheus/alertmanager/alertmanager.yml</code></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">global:</span><br><span class="line">  resolve_timeout: 5m</span><br><span class="line">route:</span><br><span class="line">  group_by: [<span class="string">'cqh'</span>]</span><br><span class="line">  group_wait: 10s <span class="comment"># 组报警等待时间</span></span><br><span class="line">  group_interval: 10s <span class="comment"># 组报警间隔时间</span></span><br><span class="line">  repeat_interval: 1m <span class="comment"># 重复报警间隔时间</span></span><br><span class="line">  receiver: <span class="string">'web.hook'</span></span><br><span class="line">receivers:</span><br><span class="line">  - name: <span class="string">'web.hook'</span></span><br><span class="line">    webhook_configs:</span><br><span class="line">      - url: <span class="string">'http://xx.xx.xx.xx:8888/open/test'</span></span><br><span class="line">inhibit_rules:</span><br><span class="line">  - source_match:</span><br><span class="line">      severity: <span class="string">'critical'</span></span><br><span class="line">    target_match:</span><br><span class="line">      severity: <span class="string">'warning'</span></span><br><span class="line">    equal: [<span class="string">'alertname'</span>, <span class="string">'dev'</span>, <span class="string">'instance'</span>]</span><br></pre></td></tr></table></figure>
+
+
+
+<h2 id="快速启动"><a href="#快速启动" class="headerlink" title="快速启动"></a>快速启动</h2><p>服务会监听多个本地端口，需要预先确定端口是否被占用。</p>
+<p>端口列表为：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">- <span class="string">"9090:9090"</span></span><br><span class="line">- <span class="string">"9100:9100"</span></span><br><span class="line">- <span class="string">"9091:9091"</span></span><br><span class="line">- <span class="string">"9093:9093"</span></span><br><span class="line">- <span class="string">"8500:8500"</span></span><br><span class="line">- <span class="string">"3000:3000"</span></span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="启动"><a href="#启动" class="headerlink" title="启动"></a>启动</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 进入monitor目录</span></span><br><span class="line"><span class="built_in">cd</span> monitor</span><br><span class="line">docker-compose up -d</span><br><span class="line"></span><br><span class="line"><span class="comment"># 启动成功的输出</span></span><br><span class="line">Creating network <span class="string">"monitor_default"</span> with the default driver</span><br><span class="line">Creating monitor_prometheus_1    ... <span class="keyword">done</span></span><br><span class="line">Creating monitor_consul_1        ... <span class="keyword">done</span></span><br><span class="line">Creating monitor_pushgateway_1   ... <span class="keyword">done</span></span><br><span class="line">Creating monitor_node-exporter_1 ... <span class="keyword">done</span></span><br><span class="line">Creating monitor_alertmanager_1  ... <span class="keyword">done</span></span><br><span class="line">Creating monitor_grafana_1       ... <span class="keyword">done</span></span><br></pre></td></tr></table></figure>
+
+<p>初次启动时，会自动下载镜像到本地。镜像列表为：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">image: prom/prometheus:latest</span><br><span class="line">image: prom/node-exporter:latest</span><br><span class="line">image: prom/pushgateway:latest</span><br><span class="line">image: prom/alertmanager:latest</span><br><span class="line">image: consul:latest</span><br><span class="line">image: grafana/grafana:latest</span><br></pre></td></tr></table></figure>
+
+<h3 id="检查启动结果"><a href="#检查启动结果" class="headerlink" title="检查启动结果"></a>检查启动结果</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">docker-compose ps</span><br><span class="line"></span><br><span class="line"><span class="comment"># 输出</span></span><br><span class="line">         Name                        Command               State              Ports</span><br><span class="line">-------------------------------------------------------------------------------------------</span><br><span class="line">monitor_alertmanager_1    /bin/alertmanager --config ...   Up      0.0.0.0:9093-&gt;9093/tcp</span><br><span class="line">monitor_consul_1          docker-entrypoint.sh agent ...   Up      8300/tcp, 8301/tcp, 8301/udp, 8302/tcp, 8302/udp, 0.0.0.0:8500-&gt;8500/tcp, 8600/tcp, 8600/udp</span><br><span class="line">monitor_grafana_1         /run.sh                          Up      0.0.0.0:3000-&gt;3000/tcp</span><br><span class="line">monitor_node-exporter_1   /bin/node_exporter               Up      0.0.0.0:9100-&gt;9100/tcp</span><br><span class="line">monitor_prometheus_1      /bin/prometheus --config.f ...   Up      0.0.0.0:9090-&gt;9090/tcp</span><br><span class="line">monitor_pushgateway_1     /bin/pushgateway                 Up      0.0.0.0:9091-&gt;9091/tcp</span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="查看Grafana"><a href="#查看Grafana" class="headerlink" title="查看Grafana"></a>查看Grafana</h3><p>在浏览器中打开grafana<code>http://127.0.0.1:3000</code>。</p>
+<p>默认登录用户和密码为: <code>admin</code> <code>admin</code></p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/grafana-ui.png" alt="grafana-ui"></p>
+<h3 id="配置数据源"><a href="#配置数据源" class="headerlink" title="配置数据源"></a>配置数据源</h3><p><strong>PS: 注意配置数据源地址应为<code>xx.xx.xx.xx:9090</code>，替换成自己的ip，不能用<code>localhost</code>,因为<code>grafana</code>在容器中。</strong></p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-datasource.png" alt="prometheus-datasource"></p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/use-ip.png" alt="use-ip"></p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/save-test.png" alt="save-test"></p>
+<h3 id="导入展示UI"><a href="#导入展示UI" class="headerlink" title="导入展示UI"></a>导入展示UI</h3><p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/dashboard-import.png" alt="dashboard-import"></p>
+<p>可以输入<code>node_exporter</code>的<code>Dashboard</code>编号: <code>8919</code></p>
+<p>或者去<code>https://grafana.com/grafana/dashboards</code> 选择合适的UI模板。亦可自行配置模板。</p>
+<p>导入后展示</p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/grafana-dashboard.png" alt="grafana-dashboard"></p>
+<h2 id="测试pushgateway"><a href="#测试pushgateway" class="headerlink" title="测试pushgateway"></a>测试<code>pushgateway</code></h2><p><code>PushGateway</code>是为了允许临时作业和批处理作业向<code>Prometheus</code>公开他们的指标。由于这类作业的存在时间可能不够长, 无法抓取到, 因此它们可以将指标推送到推网关中。<code>Prometheus</code>采集数据是用的pull也就是拉模型，这从刚才设置的5秒参数就能看出来。但是有些数据并不适合采用这样的方式，对这样的数据可以使用<code>PushGateway</code>    服务。<br>它就相当于一个缓存，当数据采集完成之后，就上传到这里，由<code>Prometheus</code>稍后再pull过来。<br>访问 <code>http://127.0.0.1:9091</code> 可以看到pushgateway已经运行起来了</p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/pushgateway.png" alt="pushgateway"></p>
+<p>接下来我们就可以往<code>pushgatewa</code>y推送数据了，<code>Prometheus</code>提供了多种语言的sdk，最简单的方式就是通过shell</p>
+<h3 id="推送一个指标"><a href="#推送一个指标" class="headerlink" title="推送一个指标"></a>推送一个指标</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">echo</span> <span class="string">"cqh_metric 100"</span> | curl --data-binary @- http://127.0.0.1:9091/metrics/job/cqh</span><br></pre></td></tr></table></figure>
+
+<h3 id="推送多个指标"><a href="#推送多个指标" class="headerlink" title="推送多个指标"></a>推送多个指标</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">cat &lt;&lt;EOF | curl --data-binary @- http://127.0.0.1:9091/metrics/job/cqh/instance/<span class="built_in">test</span></span><br><span class="line">insert_xian 100</span><br><span class="line">insert_guangzhou 60</span><br><span class="line">insert_nanjing 160</span><br><span class="line">EOF</span><br></pre></td></tr></table></figure>
+
+<h3 id="结果如下"><a href="#结果如下" class="headerlink" title="结果如下"></a>结果如下</h3><p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-query.png" alt="prometheus-query"></p>
+<p>然后我们再到<code>prometheus</code>里看，已经可以搜索出刚刚推送的指标了。</p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/pushgateway-metrics.png" alt="pushgateway-metrics"></p>
+<h2 id="测试AlertManager"><a href="#测试AlertManager" class="headerlink" title="测试AlertManager"></a>测试<code>AlertManager</code></h2><p><code>Pormetheus</code>的警告由独立的两部分组成。<br><code>Prometheus</code>服务中的警告规则发送警告到<code>Alertmanager</code>，然后这个<code>Alertmanager</code>管理这些警告。包括<code>silencing</code>,<code>inhibition</code>,<code>aggregation</code>，以及通过一些方法发送通知，例如：<code>email</code>，<code>HipChat</code>等。</p>
+<p>访问<code>http://127.0.0.1:9093</code></p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/alertmanager-ui.png" alt="alertmanager-ui"></p>
+<p>接下来修改<code>Prometheus Server</code>端配置报警规则和<code>alertmanager</code>地址。<br>修改规则<code>monitor/config/prometheus/server/rules.yml</code></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">groups:</span><br><span class="line">  - name: cqh</span><br><span class="line">    rules:</span><br><span class="line">      - alert: cqhTest</span><br><span class="line">        expr: insert_guangzhou &gt; 10</span><br><span class="line">        <span class="keyword">for</span>: 10s</span><br><span class="line">        labels:</span><br><span class="line">          status: warning</span><br><span class="line">        annotations:</span><br><span class="line">          summary: <span class="string">"&#123;&#123;<span class="variable">$labels</span>.instance&#125;&#125;:超标!!!"</span></span><br><span class="line">          description: <span class="string">"&#123;&#123;<span class="variable">$labels</span>.instance&#125;&#125;:超标!!!"</span></span><br></pre></td></tr></table></figure>
+
+<p>这条规则的意思是，<code>insert_guangzhou</code> 超过10，持续10s，就报警通知。</p>
+<p>重启<code>Prometheus</code>加载配置，查看报警。</p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/prometheus-alert.png" alt="prometheus-alert"></p>
+<h2 id="测试Consul"><a href="#测试Consul" class="headerlink" title="测试Consul"></a>测试<code>Consul</code></h2><p><code>Consul</code>作为一个服务发现的注册中心，可以动态添加删除<code>target</code>来管理长期运行的服务，而不用频繁修改<code>Prometheus</code>的配置文件。</p>
+<h3 id="向consul注册一个服务"><a href="#向consul注册一个服务" class="headerlink" title="向consul注册一个服务"></a>向consul注册一个服务</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">curl -X PUT -d <span class="string">'&#123;"id": "node-xx.xx.xx.xx","name": "node_exporter","address": "xx.xx.xx.xx","port": 9100,"tags": ["prod","prome","node"],"checks": [&#123;"http": "http://xx.xx.xx.xx:9100/metrics","interval": "35s"&#125;]&#125;'</span> http://xx.xx.xx.xx:8500/v1/agent/service/register</span><br></pre></td></tr></table></figure>
+
+<p>检查<code>consul</code>和<code>prometheus</code>是否已有对应target：</p>
+<p><img src="/blog/2020/11/26/%E5%BF%AB%E9%80%9F%E6%90%AD%E5%BB%BAPrometheus%E7%9B%91%E6%8E%A7%E7%8E%AF%E5%A2%83/consul-add.png" alt="consul-add"></p>
+<h3 id="注销一个服务"><a href="#注销一个服务" class="headerlink" title="注销一个服务"></a>注销一个服务</h3><p><strong>PS: 注意<code>xx.xx.xx.xx</code>需与注册时保持一致。</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">curl -X PUT http:&#x2F;&#x2F;127.0.0.1:8500&#x2F;v1&#x2F;agent&#x2F;service&#x2F;deregister&#x2F;node-xx.xx.xx.xx</span><br></pre></td></tr></table></figure>
+
+
+
+<p>整个流程就是这样。</p>
+<h2 id="其他问题"><a href="#其他问题" class="headerlink" title="其他问题"></a>其他问题</h2><ol>
+<li>高可用<code>Prometheus Server</code></li>
+<li>海量监控数据存储和查询展示</li>
+<li>高可用<code>PushGateway</code>和<code>Alertmanager</code></li>
+<li>开箱可用的<code>exporter</code></li>
+</ol>
+<p>以后再谈。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li><a href="https://prometheus.io/docs/introduction/overview/" target="_blank" rel="noopener">prometheus.io</a></li>
+<li><a href="https://www.cnblogs.com/xiaobaozi-95/p/10740511.html" target="_blank" rel="noopener">一条自在的鱼</a></li>
+<li><a href="https://www.cnblogs.com/caizhenghui/p/9132414.html" target="_blank" rel="noopener">hadoop监控</a></li>
+<li>其他</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/blog/2020/11/22/%E7%BC%96%E8%AF%91python%E7%9A%84rpm%E5%8C%85%E6%97%B6%E9%81%87%E5%88%B0%E7%9A%84%E9%97%AE%E9%A2%98/" rel="prev" title="编译python的rpm包时遇到的问题">
+      <i class="fa fa-chevron-left"></i> 编译python的rpm包时遇到的问题
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#什么是Prometheus"><span class="nav-number">1.</span> <span class="nav-text">什么是Prometheus?</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Prometheus的特点"><span class="nav-number">2.</span> <span class="nav-text">Prometheus的特点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#架构图"><span class="nav-number">3.</span> <span class="nav-text">架构图</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#基本原理"><span class="nav-number">4.</span> <span class="nav-text">基本原理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#服务流程简述"><span class="nav-number">5.</span> <span class="nav-text">服务流程简述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#三大组件"><span class="nav-number">6.</span> <span class="nav-text">三大组件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#安装过程"><span class="nav-number">7.</span> <span class="nav-text">安装过程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#安装准备"><span class="nav-number">7.1.</span> <span class="nav-text">安装准备</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#配置prometheus-server"><span class="nav-number">7.2.</span> <span class="nav-text">配置prometheus server</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#配置-alertmanager"><span class="nav-number">7.3.</span> <span class="nav-text">配置 alertmanager</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#快速启动"><span class="nav-number">8.</span> <span class="nav-text">快速启动</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#启动"><span class="nav-number">8.1.</span> <span class="nav-text">启动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#检查启动结果"><span class="nav-number">8.2.</span> <span class="nav-text">检查启动结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#查看Grafana"><span class="nav-number">8.3.</span> <span class="nav-text">查看Grafana</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#配置数据源"><span class="nav-number">8.4.</span> <span class="nav-text">配置数据源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#导入展示UI"><span class="nav-number">8.5.</span> <span class="nav-text">导入展示UI</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#测试pushgateway"><span class="nav-number">9.</span> <span class="nav-text">测试pushgateway</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#推送一个指标"><span class="nav-number">9.1.</span> <span class="nav-text">推送一个指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#推送多个指标"><span class="nav-number">9.2.</span> <span class="nav-text">推送多个指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#结果如下"><span class="nav-number">9.3.</span> <span class="nav-text">结果如下</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#测试AlertManager"><span class="nav-number">10.</span> <span class="nav-text">测试AlertManager</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#测试Consul"><span class="nav-number">11.</span> <span class="nav-text">测试Consul</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#向consul注册一个服务"><span class="nav-number">11.1.</span> <span class="nav-text">向consul注册一个服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#注销一个服务"><span class="nav-number">11.2.</span> <span class="nav-text">注销一个服务</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#其他问题"><span class="nav-number">12.</span> <span class="nav-text">其他问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考资料"><span class="nav-number">13.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">cnsinger</p>
+  <div class="site-description" itemprop="description">Never stop thinking.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/blog/archives/">
+        
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/blog/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">cnsinger</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://mist.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Mist</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/blog/lib/anime.min.js"></script>
+  <script src="/blog/lib/velocity/velocity.min.js"></script>
+  <script src="/blog/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/blog/js/utils.js"></script>
+
+<script src="/blog/js/motion.js"></script>
+
+
+<script src="/blog/js/schemes/muse.js"></script>
+
+
+<script src="/blog/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/blog/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
